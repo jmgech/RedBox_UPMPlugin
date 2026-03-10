@@ -154,19 +154,22 @@ using UnityEngine;
 
 public class REDboxTestListener : MonoBehaviour
 {
-    private void OnEnable()
+    private void Start()
     {
-        if (EventManager.Instance == null)
+        // Start() runs after all Awake() calls — EventManager.Instance is guaranteed ready.
+        EventManager em = EventManager.Instance
+                          ?? FindAnyObjectByType<EventManager>();
+        if (em == null)
         {
             Debug.LogWarning(""[REDboxTestListener] EventManager not found in scene!"");
             return;
         }
-        EventManager.Instance.OnCardScanned.AddListener(OnCardScanned);
-        EventManager.Instance.OnScannerMissing.AddListener(OnScannerMissing);
+        em.OnCardScanned.AddListener(OnCardScanned);
+        em.OnScannerMissing.AddListener(OnScannerMissing);
         Debug.Log(""[REDboxTestListener] Subscribed to EventManager events."");
     }
 
-    private void OnDisable()
+    private void OnDestroy()
     {
         if (EventManager.Instance == null) return;
         EventManager.Instance.OnCardScanned.RemoveListener(OnCardScanned);

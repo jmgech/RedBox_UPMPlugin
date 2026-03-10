@@ -52,22 +52,31 @@ public class CardScanToast : MonoBehaviour
     // LIFECYCLE
     // ═════════════════════════════════════════════════════════════════════════
 
-    private void OnEnable()
+    private void Start()
     {
-        if (EventManager.Instance != null)
+        // Start() runs after all Awake() calls, so EventManager.Instance is guaranteed set.
+        EventManager em = EventManager.Instance
+                          ?? FindAnyObjectByType<EventManager>();
+        if (em != null)
         {
-            EventManager.Instance.OnCardScanned.AddListener(OnCardScanned);
-            EventManager.Instance.OnScannerMissing.AddListener(OnScannerMissing);
+            em.OnCardScanned.AddListener(OnCardScanned);
+            em.OnScannerMissing.AddListener(OnScannerMissing);
         }
+        else
+        {
+            Debug.LogWarning("[CardScanToast] EventManager not found in scene. Card events won't show.");
+        }
+
         ArduinoBridge.OnConnectionStateChanged += OnConnectionStateChanged;
     }
 
     private void OnDisable()
     {
-        if (EventManager.Instance != null)
+        EventManager em = EventManager.Instance;
+        if (em != null)
         {
-            EventManager.Instance.OnCardScanned.RemoveListener(OnCardScanned);
-            EventManager.Instance.OnScannerMissing.RemoveListener(OnScannerMissing);
+            em.OnCardScanned.RemoveListener(OnCardScanned);
+            em.OnScannerMissing.RemoveListener(OnScannerMissing);
         }
         ArduinoBridge.OnConnectionStateChanged -= OnConnectionStateChanged;
     }
