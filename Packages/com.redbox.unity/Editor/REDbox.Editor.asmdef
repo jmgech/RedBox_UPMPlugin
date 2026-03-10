@@ -3,7 +3,8 @@
     "rootNamespace": "",
     "references": [
         "REDbox.Runtime",
-        "Unity.TextMeshPro"
+        "Unity.TextMeshPro",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"
@@ -13,7 +14,9 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "NET_4_6"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }
