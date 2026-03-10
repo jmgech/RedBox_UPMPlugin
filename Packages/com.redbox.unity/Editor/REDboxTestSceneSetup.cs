@@ -93,11 +93,22 @@ public static class REDboxTestSceneSetup
         cam.tag = "MainCamera";
         cam.transform.position = new Vector3(0, 1, -10);
 
-        // 9 ── Save scene
+        // 9 ── CardScanToast — always-on fallback overlay (no Canvas needed)
+        GameObject goToast = new GameObject("CardScanToast");
+        goToast.AddComponent<CardScanToast>();
+
+        // 10 ── DebugOverlay visible from start (F1 to toggle)
+        GameObject goDebug = new GameObject("DebugOverlay");
+        DebugOverlay dbg = goDebug.AddComponent<DebugOverlay>();
+        SerializedObject soDbg = new SerializedObject(dbg);
+        soDbg.FindProperty("showOnStart").boolValue = true;
+        soDbg.ApplyModifiedPropertiesWithoutUndo();
+
+        // 11 ── Save scene
         EditorSceneManager.SaveScene(scene, kScenePath);
         AssetDatabase.Refresh();
 
-        // 10 ── Summary
+        // 12 ── Summary
         Debug.Log(
             "[REDbox Setup] ✅ Test scene created at " + kScenePath + "\n\n" +
             "NEXT STEPS:\n" +
