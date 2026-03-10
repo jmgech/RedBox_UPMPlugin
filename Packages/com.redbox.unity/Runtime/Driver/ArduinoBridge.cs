@@ -164,14 +164,11 @@ public class ArduinoBridge : MonoBehaviour
         }
 
         // Prefer last user-selected runtime port when available.
+        // NOTE: we only store the override; we never mutate settings.autoDetectPort
+        // so that auto-detect still runs as a fallback if the saved port is gone.
         if (PlayerPrefs.HasKey(PreferredPortPlayerPrefKey))
         {
             _runtimePortOverride = PlayerPrefs.GetString(PreferredPortPlayerPrefKey, string.Empty)?.Trim();
-            if (!string.IsNullOrWhiteSpace(_runtimePortOverride))
-            {
-                settings.serialPort = _runtimePortOverride;
-                settings.autoDetectPort = false;
-            }
         }
 
         StartConnectionLoop();
@@ -373,14 +370,17 @@ public class ArduinoBridge : MonoBehaviour
                     }
                 }
             }
-            return null;
+            // No keyword match — fall through to explicit port as last resort
         }
 
         // Port explicitement configuré
-        foreach (string port in available)
+        if (!string.IsNullOrWhiteSpace(settings.serialPort))
         {
-            if (port.Equals(settings.serialPort, StringComparison.OrdinalIgnoreCase))
-                return port;
+            foreach (string port in available)
+            {
+                if (port.Equals(settings.serialPort, StringComparison.OrdinalIgnoreCase))
+                    return port;
+            }
         }
 
         return null;
