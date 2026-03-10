@@ -49,8 +49,7 @@ public class RuntimeSettingsCanvasMenu : MonoBehaviour
     [Tooltip("Met en pause le gameplay (Time.timeScale=0) quand le menu est ouvert.")]
     public bool pauseGameplayWhenVisible = true;
 
-    [Tooltip("Composants à désactiver quand le menu est ouvert (FPSController, RoverController…). "
-           + "Si vide, FPSController est cherché automatiquement dans la scène.")]
+    [Tooltip("Composants à désactiver quand le menu est ouvert (ex: RoverController, PlayerController…).")]
     public Behaviour[] pauseTargets = Array.Empty<Behaviour>();
 
     // ─── Ports ─────────────────────────────────────────────────────────────────
@@ -202,14 +201,6 @@ public class RuntimeSettingsCanvasMenu : MonoBehaviour
         EnsureReadableUiLayout();
 
         DisableLegacyImGuiMenus();
-
-        // Auto-find FPSController si pauseTargets non renseigné dans l'Inspector
-        if (pauseTargets == null || pauseTargets.Length == 0)
-        {
-            FPSController fps = FindAnyObjectByType<FPSController>();
-            if (fps != null)
-                pauseTargets = new Behaviour[] { fps };
-        }
 
         // Snapshot des Animators pour pouvoir basculer en UnscaledTime pendant la pause
         CaptureSceneAnimators();
