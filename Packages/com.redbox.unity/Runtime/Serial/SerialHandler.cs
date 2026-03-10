@@ -13,7 +13,6 @@
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 using System;
-using System.IO.Ports;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -24,7 +23,7 @@ using UnityEngine.Events;
 [Obsolete("SerialHandler est déprécié. Utilisez ArduinoBridge.", error: false)]
 public class SerialHandler : IDisposable
 {
-    private SerialPort serialPort;
+    private object serialPort;
 
 #pragma warning disable CS0067
     public event Action<string> OnDataReceived;
@@ -42,7 +41,6 @@ public class SerialHandler : IDisposable
 
     public void Dispose()
     {
-        serialPort?.Close();
-        serialPort?.Dispose();
+        serialPort = null;
     }
 }

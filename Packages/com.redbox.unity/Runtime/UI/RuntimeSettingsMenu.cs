@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO.Ports;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -398,7 +397,9 @@ public class RuntimeSettingsMenu : MonoBehaviour
 
     private static string[] GetAvailablePorts()
     {
-        string[] ports = SerialPort.GetPortNames();
+        string[] ports = ArduinoBridge.Instance != null
+            ? ArduinoBridge.Instance.GetAvailablePorts()
+            : Array.Empty<string>();
         Array.Sort(ports, StringComparer.OrdinalIgnoreCase);
         return ports;
     }

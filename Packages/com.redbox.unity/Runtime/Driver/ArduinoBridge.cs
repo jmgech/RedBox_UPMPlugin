@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Ports;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,7 +60,7 @@ public class ArduinoBridge : MonoBehaviour
     public static event Action<bool> OnDeviceReadyChanged;
 
     // ─── Privé ────────────────────────────────────────────────────────────────
-    private SerialPort            _serialPort;
+    private object                _serialPort;
     private CancellationTokenSource _cts;
     private Dictionary<string, Card> _cardRegistry;
     private Coroutine             _connectionLoopCoroutine;
@@ -102,7 +102,7 @@ public class ArduinoBridge : MonoBehaviour
     public string LastConnectionError => _lastConnectionError;
     public DateTime LastScanTime     => _lastScanTime;
     public int CardRegistryCount     => _cardRegistry?.Count ?? 0;
-    public string ActivePort         => _serialPort?.PortName ?? "—";
+    public string ActivePort         => SerialPortCompat.GetPortName(_serialPort) ?? "—";
     public int LastErrorCode         => _lastErrorCode;
     public string LastErrorMessage   => _lastErrorMessage;
     public string LastSysState       => _lastSysState;
@@ -189,7 +189,7 @@ public class ArduinoBridge : MonoBehaviour
             StopCoroutine(_connectionLoopCoroutine);
             _connectionLoopCoroutine = null;
         }
-        try { _serialPort?.Close(); } catch { /* déjà fermé */ }
+        try { SerialPortCompat.Close(_serialPort); } catch { /* déjà fermé */ }
         _serialPort = null;
         _lastSysState = "—";
         _pendingScannerEnable = false;
@@ -267,7 +267,7 @@ public class ArduinoBridge : MonoBehaviour
                 string port = ResolvePort();
                 if (port == null)
                 {
-                    string available = string.Join(", ", SerialPort.GetPortNames());
+                    string available = string.Join(", ", GetAvailablePorts());
                     Debug.LogWarning($"[ArduinoBridge] Aucun port trouvé. " +
                                      $"Ports disponibles : [{available}]. " +
                                      $"Nouvelle tentative dans {settings.reconnectDelay}s.");
@@ -347,7 +347,7 @@ public class ArduinoBridge : MonoBehaviour
 
     private string ResolvePort()
     {
-        string[] available = SerialPort.GetPortNames();
+        string[] available = GetAvailablePorts();
 
         // Runtime-selected port has top priority if still present.
         if (!string.IsNullOrWhiteSpace(_runtimePortOverride))
@@ -394,15 +394,15 @@ public class ArduinoBridge : MonoBehaviour
     {
         try
         {
-            _serialPort = new SerialPort(portName, settings.baudRate)
+            _serialPort = SerialPortCompat.Create(portName, settings.baudRate, 5000, 2000, true, true);
+            if (_serialPort == null)
             {
-                ReadTimeout  = 5000,
-                WriteTimeout = 2000,
-                DtrEnable    = true,  // Nécessaire sur certains Arduinos pour éviter le reset
-                RtsEnable    = true
-            };
-            _serialPort.Open();
-            return _serialPort.IsOpen;
+                _lastConnectionError = "SerialPort indisponible dans cet environnement Unity";
+                return false;
+            }
+
+            SerialPortCompat.Open(_serialPort);
+            return SerialPortCompat.IsOpen(_serialPort);
         }
         catch (Exception ex)
         {
@@ -421,14 +421,14 @@ public class ArduinoBridge : MonoBehaviour
     {
         try
         {
-            while (!token.IsCancellationRequested && _serialPort != null && _serialPort.IsOpen)
+            while (!token.IsCancellationRequested && _serialPort != null && SerialPortCompat.IsOpen(_serialPort))
             {
                 // ReadLine bloque jusqu'à réception d'une ligne — thread background OK
                 string line = await Task.Run(() =>
                 {
                     try
                     {
-                        return _serialPort?.ReadLine();
+                        return SerialPortCompat.ReadLine(_serialPort);
                     }
                     catch (TimeoutException)
                     {
@@ -869,7 +869,7 @@ public class ArduinoBridge : MonoBehaviour
             _connectionLoopCoroutine = null;
         }
 
-        try { _serialPort?.Close(); } catch { /* déjà fermé */ }
+        try { SerialPortCompat.Close(_serialPort); } catch { /* déjà fermé */ }
         _serialPort = null;
         _lastSysState = "—";
         _pendingScannerEnable = false;
@@ -885,7 +885,7 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Envoie une commande brute (bytes) à l'Arduino.</summary>
     public void SendCommand(byte[] command)
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_serialPort == null || !SerialPortCompat.IsOpen(_serialPort))
         {
             Debug.LogWarning("[ArduinoBridge] SendCommand : port non connecté.");
             _lastConnectionError = "Port non connecte";
@@ -893,7 +893,7 @@ public class ArduinoBridge : MonoBehaviour
         }
         try
         {
-            _serialPort.Write(command, 0, command.Length);
+            SerialPortCompat.Write(_serialPort, command, 0, command.Length);
         }
         catch (Exception ex)
         {
@@ -923,7 +923,7 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Retourne les ports série disponibles sur la machine.</summary>
     public string[] GetAvailablePorts()
     {
-        string[] ports = SerialPort.GetPortNames();
+        string[] ports = SerialPortCompat.GetPortNames();
         Array.Sort(ports, StringComparer.OrdinalIgnoreCase);
         return ports;
     }
@@ -1102,6 +1102,107 @@ public class ArduinoBridge : MonoBehaviour
         }
 
         return false;
+    }
+
+    private static class SerialPortCompat
+    {
+        private static readonly Type SerialPortType =
+            Type.GetType("System.IO.Ports.SerialPort, System.IO.Ports")
+            ?? Type.GetType("System.IO.Ports.SerialPort");
+
+        public static bool IsAvailable => SerialPortType != null;
+
+        public static string[] GetPortNames()
+        {
+            if (!IsAvailable) return Array.Empty<string>();
+
+            try
+            {
+                MethodInfo getPorts = SerialPortType.GetMethod("GetPortNames", BindingFlags.Public | BindingFlags.Static);
+                return (string[])(getPorts?.Invoke(null, null) ?? Array.Empty<string>());
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        public static object Create(string portName, int baudRate, int readTimeout, int writeTimeout, bool dtrEnable, bool rtsEnable)
+        {
+            if (!IsAvailable) return null;
+
+            try
+            {
+                object instance = Activator.CreateInstance(SerialPortType, portName, baudRate);
+                SetProperty(instance, "ReadTimeout", readTimeout);
+                SetProperty(instance, "WriteTimeout", writeTimeout);
+                SetProperty(instance, "DtrEnable", dtrEnable);
+                SetProperty(instance, "RtsEnable", rtsEnable);
+                return instance;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static void Open(object serialPort)
+        {
+            Invoke(serialPort, "Open");
+        }
+
+        public static void Close(object serialPort)
+        {
+            Invoke(serialPort, "Close");
+            Invoke(serialPort, "Dispose");
+        }
+
+        public static bool IsOpen(object serialPort)
+        {
+            if (serialPort == null) return false;
+            return GetProperty<bool>(serialPort, "IsOpen");
+        }
+
+        public static string ReadLine(object serialPort)
+        {
+            if (serialPort == null) return null;
+            return Invoke(serialPort, "ReadLine") as string;
+        }
+
+        public static void Write(object serialPort, byte[] buffer, int offset, int count)
+        {
+            if (serialPort == null) return;
+            Invoke(serialPort, "Write", buffer, offset, count);
+        }
+
+        public static string GetPortName(object serialPort)
+        {
+            if (serialPort == null) return null;
+            return GetProperty<string>(serialPort, "PortName");
+        }
+
+        private static object Invoke(object target, string method, params object[] args)
+        {
+            if (target == null) return null;
+            MethodInfo mi = target.GetType().GetMethod(method, BindingFlags.Public | BindingFlags.Instance);
+            return mi?.Invoke(target, args);
+        }
+
+        private static void SetProperty(object target, string property, object value)
+        {
+            if (target == null) return;
+            PropertyInfo pi = target.GetType().GetProperty(property, BindingFlags.Public | BindingFlags.Instance);
+            pi?.SetValue(target, value);
+        }
+
+        private static T GetProperty<T>(object target, string property)
+        {
+            if (target == null) return default;
+            PropertyInfo pi = target.GetType().GetProperty(property, BindingFlags.Public | BindingFlags.Instance);
+            object value = pi?.GetValue(target);
+            if (value is T cast) return cast;
+            return default;
+        }
     }
 
     private void StartConnectionLoop()
