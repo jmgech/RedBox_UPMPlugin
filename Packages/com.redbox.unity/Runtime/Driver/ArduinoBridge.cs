@@ -264,7 +264,7 @@ public class ArduinoBridge : MonoBehaviour
                 string port = ResolvePort();
                 if (port == null)
                 {
-                    string available = string.Join(", ", SerialPort.GetPortNames());
+                    string available = string.Join(", ", GetAvailablePorts());
                     Debug.LogWarning($"[ArduinoBridge] Aucun port trouvé. " +
                                      $"Ports disponibles : [{available}]. " +
                                      $"Nouvelle tentative dans {settings.reconnectDelay}s.");
@@ -344,7 +344,7 @@ public class ArduinoBridge : MonoBehaviour
 
     private string ResolvePort()
     {
-        string[] available = SerialPort.GetPortNames();
+        string[] available = GetAvailablePorts();
 
         // Runtime-selected port has top priority if still present.
         if (!string.IsNullOrWhiteSpace(_runtimePortOverride))
@@ -920,12 +920,38 @@ public class ArduinoBridge : MonoBehaviour
         SendCommand(new byte[] { 0xFF, 0x00 });
     }
 
-    /// <summary>Retourne les ports série disponibles sur la machine.</summary>
+    /// <summary>
+    /// Retourne tous les ports série disponibles.
+    /// Sur macOS/Linux, SerialPort.GetPortNames() ne retourne que /dev/tty.* —
+    /// on y ajoute manuellement /dev/cu.* qui est le bon sens (outgoing) pour Arduino.
+    /// Les entrées cu.* sont triées en premier pour être préférées lors du matching.
+    /// </summary>
     public string[] GetAvailablePorts()
     {
-        string[] ports = SerialPort.GetPortNames();
-        Array.Sort(ports, StringComparer.OrdinalIgnoreCase);
-        return ports;
+        var portSet = new System.Collections.Generic.HashSet<string>(
+            SerialPort.GetPortNames(), StringComparer.OrdinalIgnoreCase);
+
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX || UNITY_EDITOR_LINUX || UNITY_STANDALONE_LINUX
+        // /dev/cu.* = call-up device = correct for outgoing connections (Arduino).
+        // Mono's GetPortNames() only enumerates tty.* — supplement manually.
+        try
+        {
+            foreach (string f in System.IO.Directory.GetFiles("/dev", "cu.*"))
+                portSet.Add(f);
+        }
+        catch { /* /dev not accessible */ }
+#endif
+
+        var list = new System.Collections.Generic.List<string>(portSet);
+        // Sort: cu.* before tty.* so keyword matching prefers the outgoing device.
+        list.Sort((a, b) =>
+        {
+            bool aCu = a.IndexOf("/dev/cu.", StringComparison.OrdinalIgnoreCase) == 0;
+            bool bCu = b.IndexOf("/dev/cu.", StringComparison.OrdinalIgnoreCase) == 0;
+            if (aCu != bCu) return aCu ? -1 : 1;
+            return StringComparer.OrdinalIgnoreCase.Compare(a, b);
+        });
+        return list.ToArray();
     }
 
     /// <summary>

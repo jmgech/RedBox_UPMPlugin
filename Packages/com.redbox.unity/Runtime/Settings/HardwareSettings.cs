@@ -42,7 +42,7 @@ public class HardwareSettings : ScriptableObject
     public bool autoDetectPort = false;
 
     [Tooltip("Mots-clés pour identifier le bon port. L'ordre détermine la priorité.")]
-    public string[] autoDetectKeywords = { "usbserial", "wchusbserial", "usbmodem", "Arduino", "CH340", "CP210", "REDbox" };
+    public string[] autoDetectKeywords = { "cu.usbserial", "cu.wchusbserial", "cu.usbmodem", "usbserial", "wchusbserial", "usbmodem", "Arduino", "CH340", "CP210", "REDbox" };
 
     [Header("── Modes ────────────────────────────────────────")]
     [Tooltip("Mode debug : aucune connexion série nécessaire. Permet de simuler des scans via l'Inspector ou le DebugOverlay.")]
