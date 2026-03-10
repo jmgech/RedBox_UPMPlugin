@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.Networking;
 
 /// <summary>
 /// Pont de communication entre le boîtier REDbox (Arduino + NFC) et le jeu Unity.
@@ -30,6 +29,7 @@ using UnityEngine.Networking;
 ///   Format B → "d:cardId"                (ex: "d:A3F2")
 ///   Autre    → affiché comme message de statut brut
 /// </summary>
+[AddComponentMenu("REDbox/Arduino Bridge")]
 public class ArduinoBridge : MonoBehaviour
 {
     private const string PreferredPortPlayerPrefKey = "RKNFC.PreferredPort";
@@ -773,35 +773,9 @@ public class ArduinoBridge : MonoBehaviour
 
     private IEnumerator FetchCardDataFromApi()
     {
-        if (settings == null) yield break;
-
-        string cacheFile = Path.Combine(Application.persistentDataPath, "Data.json");
-        string url       = settings.webServiceUrl.TrimEnd('/') + "/data.php";
-
-        using (UnityWebRequest req = UnityWebRequest.Get(url))
-        {
-            req.timeout = settings.networkTimeout;
-            yield return req.SendWebRequest();
-
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                Debug.LogWarning($"[ArduinoBridge] API inaccessible ({req.error}). " +
-                                 $"Utilisation du cache : {cacheFile}");
-                yield break;
-            }
-
-            string json = req.downloadHandler.text;
-
-            // Mise à jour du cache uniquement si le contenu a changé
-            bool needsUpdate = !File.Exists(cacheFile) ||
-                               File.ReadAllText(cacheFile) != json;
-
-            if (needsUpdate)
-            {
-                File.WriteAllText(cacheFile, json);
-                Debug.Log("[ArduinoBridge] Cache de données mis à jour depuis l'API.");
-            }
-        }
+        // Optional online sync disabled in the portable package build.
+        // Keep coroutine entry for API compatibility with existing scenes.
+        yield break;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
