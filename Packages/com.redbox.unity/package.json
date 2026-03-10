@@ -1,0 +1,23 @@
+{
+  "name": "com.redbox.unity",
+  "version": "0.1.0",
+  "displayName": "REDbox Unity Integration",
+  "description": "Plug-and-play REDbox serial bridge, card events, and runtime settings menu for Unity projects.",
+  "unity": "2022.3",
+  "author": {
+    "name": "REDbox"
+  },
+  "dependencies": {
+    "com.unity.inputsystem": "1.7.0",
+    "com.unity.textmeshpro": "3.0.6",
+    "com.unity.ugui": "1.0.0"
+  },
+  "keywords": [
+    "redbox",
+    "nfc",
+    "serial",
+    "hardware",
+    "runtime-menu"
+  ],
+  "documentationUrl": "Documentation~/README.md"
+}
