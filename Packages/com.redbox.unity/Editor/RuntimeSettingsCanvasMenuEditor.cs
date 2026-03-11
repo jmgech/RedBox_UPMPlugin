@@ -37,8 +37,7 @@ public static class RuntimeSettingsCanvasMenuEditor
     private static readonly Color ColInputBg    = HexColor("0A0F1A");
     private static readonly Color ColDropdownBg = HexColor("0F1E33");
 
-    // ─── Menu item ────────────────────────────────────────────────────────────
-    [MenuItem("Tools/REDbox/UI/Create Runtime Settings Canvas Menu")]
+    // ─── Menu item removed — call CreateCanvasMenu() directly if needed ─────
     private static void CreateCanvasMenu()
     {
         // ── Nettoyage d'un éventuel hôte existant ──

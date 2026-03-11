@@ -24,7 +24,7 @@ public static class REDboxTestSceneSetup
     private const string kListenerPath = kOutputDir + "/REDboxTestListener.cs";
 
     // ──────────────────────────────────────────────────────────────────────────
-    [MenuItem("Tools/REDbox/Setup/Create Test Scene", priority = 0)]
+    // Callable from code; menu item removed — use Tools > REDbox > Welcome Scene instead.
     public static void CreateTestScene()
     {
         // 1 ── Output folder
