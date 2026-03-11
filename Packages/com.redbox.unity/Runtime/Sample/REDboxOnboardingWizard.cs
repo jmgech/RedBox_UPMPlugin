@@ -38,6 +38,7 @@ public class REDboxOnboardingWizard : MonoBehaviour
     private string _connLabel  = "○  Disconnected";
     private string _connPort   = string.Empty;
     private bool   _connected;
+    private bool   _deviceReady;
     private bool   _emFound;
     private readonly Queue<string> _log = new Queue<string>();
     private const int kMaxLog = 6;
@@ -87,9 +88,14 @@ public class REDboxOnboardingWizard : MonoBehaviour
 
         ArduinoBridge.OnConnectionStateChanged += OnStateChanged;
         ArduinoBridge.OnRawDataReceived        += OnRawLine;
+        ArduinoBridge.OnDeviceReadyChanged     += OnDeviceReady;
 
         var b = ArduinoBridge.Instance;
-        if (b != null) OnStateChanged(b.State);
+        if (b != null)
+        {
+            OnStateChanged(b.State);
+            if (b.IsDeviceReady) OnDeviceReady(true);
+        }
     }
 
     private void OnDestroy()
@@ -100,6 +106,7 @@ public class REDboxOnboardingWizard : MonoBehaviour
 
         ArduinoBridge.OnConnectionStateChanged -= OnStateChanged;
         ArduinoBridge.OnRawDataReceived        -= OnRawLine;
+        ArduinoBridge.OnDeviceReadyChanged     -= OnDeviceReady;
     }
 
     private void Update()
@@ -128,17 +135,36 @@ public class REDboxOnboardingWizard : MonoBehaviour
         _screen   = 3; // jump to live monitor on first scan
     }
 
+    private void OnDeviceReady(bool ready)
+    {
+        _deviceReady = ready;
+        if (ready)
+        {
+            _connLabel = "●  Ready — scanning";
+            ArduinoBridge.Instance?.ActivateScanner();
+        }
+        else if (_connected)
+        {
+            _connLabel = "●  Connected";
+        }
+    }
+
     private void OnStateChanged(ArduinoBridge.ConnectionState state)
     {
         _connected = state == ArduinoBridge.ConnectionState.Connected;
         _connPort  = ArduinoBridge.Instance?.ActivePort ?? string.Empty;
-        _connLabel = state switch
+        if (!_deviceReady)
         {
-            ArduinoBridge.ConnectionState.Connected    => "●  Connected",
-            ArduinoBridge.ConnectionState.Connecting   => "◌  Connecting…",
-            ArduinoBridge.ConnectionState.Reconnecting => "↻  Reconnecting…",
-            _                                          => "○  Disconnected",
-        };
+            _connLabel = state switch
+            {
+                ArduinoBridge.ConnectionState.Connected    => "●  Connected",
+                ArduinoBridge.ConnectionState.Connecting   => "◌  Connecting…",
+                ArduinoBridge.ConnectionState.Reconnecting => "↻  Reconnecting…",
+                _                                          => "○  Disconnected",
+            };
+        }
+        if (state != ArduinoBridge.ConnectionState.Connected)
+            _deviceReady = false;
     }
 
     private void OnRawLine(string line)
@@ -286,7 +312,7 @@ public class REDboxOnboardingWizard : MonoBehaviour
         BeginCard();
         GUILayout.Label(
             "This scene ships with a pre-configured HardwareSettings asset.\n" +
-            "Debug Mode is ON — use the Simulate field on the next screen to try it now.",
+            "Plug in your Arduino and press Play — the scanner activates automatically.",
             _stMeta);
         EndCard();
     }

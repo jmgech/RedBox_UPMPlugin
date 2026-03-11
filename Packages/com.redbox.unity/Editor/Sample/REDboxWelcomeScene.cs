@@ -53,7 +53,7 @@ public static class REDboxWelcomeScene
 
         // ── HardwareSettings ──────────────────────────────────────────────────
         HardwareSettings hw = ScriptableObject.CreateInstance<HardwareSettings>();
-        hw.debugMode      = true;
+        hw.debugMode      = false;
         hw.autoDetectPort = true;
         hw.baudRate       = 9600;
         AssetDatabase.CreateAsset(hw, kHwPath);
