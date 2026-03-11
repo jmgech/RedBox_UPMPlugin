@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
@@ -31,8 +32,8 @@ public class CardDatabaseEditor : EditorWindow
     private bool         _dirty;
     private double       _lastRefresh;
     // UID capture (Play Mode only)
-    private bool   _capturingUid;
-    private string _captureBaseUid = string.Empty;
+    private bool     _capturingUid;
+    private DateTime _captureStartTime;
     // ── Styles (lazy) ─────────────────────────────────────────────────────────
     private GUIStyle _styleListItem;
     private GUIStyle _styleListSelected;
@@ -68,9 +69,9 @@ public class CardDatabaseEditor : EditorWindow
         SaveIfDirty();
     }
 
-    // Polls ArduinoBridge.LastScannedCardId every editor frame when capture mode is active.
-    // LastScannedCardId = the logical ID emitted in UID= (e.g. "001") — the registry key.
-    // Also auto-populates cardName / cardType from LastCardTagData when those fields are blank.
+    // Polls ArduinoBridge.LastScanTime every editor frame when capture mode is active.
+    // Accepts any scan whose LastScanTime is strictly after _captureStartTime,
+    // so tapping the same card again is always detected correctly.
     private void OnEditorUpdate()
     {
         if (!_capturingUid || !EditorApplication.isPlaying) return;
@@ -79,13 +80,14 @@ public class CardDatabaseEditor : EditorWindow
         ArduinoBridge bridge = null;
         try
         {
-            // Reflection-free: ArduinoBridge is in the Runtime assembly, accessible in Editor.
             bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
-            uid = bridge != null ? bridge.LastScannedCardId : null;
+            if (bridge == null) return;
+            if (bridge.LastScanTime <= _captureStartTime) return; // no new scan yet
+            uid = bridge.LastScannedCardId;
         }
-        catch { }
+        catch { return; }
 
-        if (string.IsNullOrEmpty(uid) || uid == "—" || uid == _captureBaseUid) return;
+        if (string.IsNullOrEmpty(uid) || uid == "—") return;
 
         // New ID detected — fill the Card ID field and optionally Name / Type.
         if (_so != null && _so.targetObject != null)
@@ -136,19 +138,14 @@ public class CardDatabaseEditor : EditorWindow
 
     private void StartCapture()
     {
-        try
-        {
-            var bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
-            _captureBaseUid = bridge != null ? bridge.LastScannedCardId : string.Empty;
-        }
-        catch { _captureBaseUid = string.Empty; }
-        _capturingUid = true;
+        _captureStartTime = DateTime.Now;
+        _capturingUid     = true;
     }
 
     private void StopCapture()
     {
-        _capturingUid   = false;
-        _captureBaseUid = string.Empty;
+        _capturingUid     = false;
+        _captureStartTime = DateTime.MinValue;
     }
 
     private void OnUndoRedo()
