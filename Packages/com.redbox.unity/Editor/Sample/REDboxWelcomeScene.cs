@@ -80,6 +80,12 @@ public static class REDboxWelcomeScene
         AssetDatabase.CreateAsset(beta, kCard2);
 
         AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        // Reload from disk so Unity tracks the references properly after scene creation
+        hw    = AssetDatabase.LoadAssetAtPath<HardwareSettings>(kHwPath);
+        alpha = AssetDatabase.LoadAssetAtPath<CharacterCard>(kCard1);
+        beta  = AssetDatabase.LoadAssetAtPath<CharacterCard>(kCard2);
 
         // ── Scene ─────────────────────────────────────────────────────────────
         Scene scene = EditorSceneManager.NewScene(
@@ -99,18 +105,12 @@ public static class REDboxWelcomeScene
         // MainThreadDispatcher
         new GameObject("MainThreadDispatcher").AddComponent<MainThreadDispatcher>();
 
-        // ArduinoBridge  — wire assets via SerializedObject so Unity tracks refs
+        // ArduinoBridge — assign directly to public fields so Unity serializes refs
         var bridgeGo = new GameObject("ArduinoBridge");
         var bridge   = bridgeGo.AddComponent<ArduinoBridge>();
-
-        var soBridge = new SerializedObject(bridge);
-        soBridge.FindProperty("settings").objectReferenceValue = hw;
-
-        var cards = soBridge.FindProperty("cardDataArray");
-        cards.arraySize = 2;
-        cards.GetArrayElementAtIndex(0).objectReferenceValue = alpha;
-        cards.GetArrayElementAtIndex(1).objectReferenceValue = beta;
-        soBridge.ApplyModifiedPropertiesWithoutUndo();
+        bridge.settings      = hw;
+        bridge.cardDataArray = new Card[] { alpha, beta };
+        EditorUtility.SetDirty(bridge);
 
         // Onboarding wizard
         new GameObject("REDboxOnboardingWizard").AddComponent<REDboxOnboardingWizard>();
