@@ -48,6 +48,12 @@ public class HardwareSettings : ScriptableObject
     [Tooltip("Mode debug : aucune connexion série nécessaire. Permet de simuler des scans via l'Inspector ou le DebugOverlay.")]
     public bool debugMode = false;
 
+    [Tooltip("Active automatiquement le scanner dès que le boîtier est prêt (STATE=READY).\nUtile pour les jeux où le scanner doit être actif en permanence. Peut être surchargé à l'exécution.")]
+    public bool autoActivateOnStart = false;
+
+    [Tooltip("Désactive le scanner et ferme la connexion proprement quand le jeu s'arrête (OnApplicationQuit / OnDestroy).\nRecommandé pour éviter que le boîtier reste en état actif entre deux sessions.")]
+    public bool autoDeactivateOnStop = false;
+
     [Tooltip("Connexion via Bluetooth (comportement série identique, port BT à spécifier dans 'serialPort').")]
     public bool bluetoothMode = false;
 

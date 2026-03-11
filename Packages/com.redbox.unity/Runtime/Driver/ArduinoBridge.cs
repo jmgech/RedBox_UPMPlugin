@@ -171,14 +171,35 @@ public class ArduinoBridge : MonoBehaviour
             _runtimePortOverride = PlayerPrefs.GetString(PreferredPortPlayerPrefKey, string.Empty)?.Trim();
         }
 
+        // Auto-activate scanner as soon as the device signals READY.
+        if (settings.autoActivateOnStart)
+            OnDeviceReadyChanged += AutoActivateOnReady;
+
         StartConnectionLoop();
     }
 
-    private void OnDestroy()    => Shutdown();
+    private void OnDestroy()         => Shutdown();
     private void OnApplicationQuit() => Shutdown();
+
+    // Called by the static OnDeviceReadyChanged event when autoActivateOnStart is on.
+    private void AutoActivateOnReady(bool ready)
+    {
+        if (ready) ActivateScanner();
+    }
 
     private void Shutdown()
     {
+        // Unsubscribe auto-activate handler regardless of current settings value
+        OnDeviceReadyChanged -= AutoActivateOnReady;
+
+        // Send deactivation command before closing the port so the firmware
+        // returns to idle state (scanner off, LED red) instead of staying active.
+        if (_serialPort != null && _serialPort.IsOpen && _scannerEnabled)
+        {
+            try { _serialPort.Write(new byte[] { 0xFF, 0x00 }, 0, 2); }
+            catch { /* best-effort — port may already be closing */ }
+        }
+
         _cts?.Cancel();
         _cts = null;
         if (_connectionLoopCoroutine != null)
