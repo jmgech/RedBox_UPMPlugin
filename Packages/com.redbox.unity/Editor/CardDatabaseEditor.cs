@@ -326,26 +326,27 @@ public class CardDatabaseEditor : EditorWindow
         // ── Core fields ───────────────────────────────────────────────────────
         SectionLabel("Identity");
 
-        // Card ID row with NFC UID capture button
-        GUILayout.BeginHorizontal();
+        // Card ID field (full-width property row)
         SerializedProperty idProp = _so.FindProperty("cardId");
         if (idProp != null)
         {
-            EditorGUI.BeginChangeCheck();
             var idLabel = new GUIContent("Card ID",
                 "Short ID token from the NDEF payload — e.g. \"001\", \"T001\", \"DB\", \"P02\".\n" +
                 "Must match the first colon-delimited token written on the physical tag.\n" +
                 "Use ⬤ Capture in Play Mode to auto-fill from a live scan.");
-            GUILayout.Label(idLabel, GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
-            idProp.stringValue = EditorGUILayout.TextField(idProp.stringValue);
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(idProp, idLabel);
             if (EditorGUI.EndChangeCheck()) _dirty = true;
         }
 
+        // Capture / Cancel button on its own indented row below Card ID
+        GUILayout.BeginHorizontal();
+        GUILayout.Space(EditorGUIUtility.labelWidth);
         if (_capturingUid)
         {
             Color prev = GUI.color;
             GUI.color = new Color(0.95f, 0.75f, 0.10f); // amber
-            if (GUILayout.Button("⏹  Cancel", GUILayout.Width(80f)))
+            if (GUILayout.Button("⏹  Cancel", GUILayout.Width(84f)))
                 StopCapture();
             GUI.color = prev;
         }
@@ -357,10 +358,11 @@ public class CardDatabaseEditor : EditorWindow
                 "⬤  Capture",
                 canCapture ? "Tap a card on the scanner to auto-fill this ID."
                            : "Enter Play Mode to use live UID capture.");
-            if (GUILayout.Button(captureLabel, GUILayout.Width(80f)))
+            if (GUILayout.Button(captureLabel, GUILayout.Width(84f)))
                 StartCapture();
             EditorGUI.EndDisabledGroup();
         }
+        GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
 
         if (_capturingUid)
