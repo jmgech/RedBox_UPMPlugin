@@ -30,7 +30,9 @@ public class CardDatabaseEditor : EditorWindow
     private Vector2      _detailScroll;
     private bool         _dirty;
     private double       _lastRefresh;
-
+    // UID capture (Play Mode only)
+    private bool   _capturingUid;
+    private string _captureBaseUid = string.Empty;
     // ── Styles (lazy) ─────────────────────────────────────────────────────────
     private GUIStyle _styleListItem;
     private GUIStyle _styleListSelected;
@@ -55,12 +57,66 @@ public class CardDatabaseEditor : EditorWindow
     {
         Refresh();
         Undo.undoRedoPerformed += OnUndoRedo;
+        EditorApplication.update += OnEditorUpdate;
     }
 
     private void OnDisable()
     {
+        EditorApplication.update -= OnEditorUpdate;
         Undo.undoRedoPerformed -= OnUndoRedo;
+        StopCapture();
         SaveIfDirty();
+    }
+
+    // Polls ArduinoBridge.LastTagUid every editor frame when capture mode is active.
+    private void OnEditorUpdate()
+    {
+        if (!_capturingUid || !EditorApplication.isPlaying) return;
+
+        string uid = null;
+        try
+        {
+            // Reflection-free: ArduinoBridge is in the Runtime assembly, accessible in Editor.
+            var bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
+            uid = bridge != null ? bridge.LastTagUid : null;
+        }
+        catch { }
+
+        if (string.IsNullOrEmpty(uid) || uid == "—" || uid == _captureBaseUid) return;
+
+        // New UID detected — fill the Card ID field.
+        if (_so != null && _so.targetObject != null)
+        {
+            _so.Update();
+            SerializedProperty p = _so.FindProperty("cardId");
+            if (p != null)
+            {
+                p.stringValue = uid;
+                _so.ApplyModifiedProperties();
+                EditorUtility.SetDirty(_selected);
+                _dirty = true;
+            }
+        }
+
+        StopCapture();
+        Repaint();
+    }
+
+    private void StartCapture()
+    {
+        try
+        {
+            var bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
+            _captureBaseUid = bridge != null ? bridge.LastTagUid : string.Empty;
+        }
+        catch { _captureBaseUid = string.Empty; }
+        _capturingUid = true;
+    }
+
+    private void StopCapture()
+    {
+        _capturingUid   = false;
+        _captureBaseUid = string.Empty;
     }
 
     private void OnUndoRedo()
@@ -158,8 +214,18 @@ public class CardDatabaseEditor : EditorWindow
                 else       _styleListItem.Draw(r, false, r.Contains(Event.current.mousePosition), false, false);
             }
 
-            // Card info inside each row
-            Rect inner = new Rect(r.x + 8f, r.y + 6f, r.width - 16f, r.height - 12f);
+            // Card info inside each row — thumbnail on the left when cardArt is set
+            const float ThumbSz = 38f;
+            float thumbRight = 0f;
+            if (c.cardArt != null)
+            {
+                thumbRight = ThumbSz + 6f;
+                Rect thumb = new Rect(r.x + 6f, r.y + 7f, ThumbSz, ThumbSz);
+                GUI.DrawTexture(thumb, c.cardArt, ScaleMode.ScaleToFit, true);
+            }
+
+            Rect inner = new Rect(r.x + 8f + thumbRight, r.y + 6f,
+                r.width - 16f - thumbRight, r.height - 12f);
             GUI.Label(new Rect(inner.x, inner.y,     inner.width, 18f), c.cardName ?? "(unnamed)",
                 EditorStyles.boldLabel);
             GUI.Label(new Rect(inner.x, inner.y + 20f, inner.width, 14f),
@@ -222,7 +288,45 @@ public class CardDatabaseEditor : EditorWindow
 
         // ── Core fields ───────────────────────────────────────────────────────
         SectionLabel("Identity");
-        PropField("cardId",   "Card ID");
+
+        // Card ID row with NFC UID capture button
+        GUILayout.BeginHorizontal();
+        SerializedProperty idProp = _so.FindProperty("cardId");
+        if (idProp != null)
+        {
+            EditorGUI.BeginChangeCheck();
+            GUILayout.Label("Card ID", GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
+            idProp.stringValue = EditorGUILayout.TextField(idProp.stringValue);
+            if (EditorGUI.EndChangeCheck()) _dirty = true;
+        }
+
+        if (_capturingUid)
+        {
+            Color prev = GUI.color;
+            GUI.color = new Color(0.95f, 0.75f, 0.10f); // amber
+            if (GUILayout.Button("⏹  Cancel", GUILayout.Width(80f)))
+                StopCapture();
+            GUI.color = prev;
+        }
+        else
+        {
+            bool canCapture = EditorApplication.isPlaying;
+            EditorGUI.BeginDisabledGroup(!canCapture);
+            GUIContent captureLabel = new GUIContent(
+                "⬤  Capture",
+                canCapture ? "Tap a card on the scanner to auto-fill this ID."
+                           : "Enter Play Mode to use live UID capture.");
+            if (GUILayout.Button(captureLabel, GUILayout.Width(80f)))
+                StartCapture();
+            EditorGUI.EndDisabledGroup();
+        }
+        GUILayout.EndHorizontal();
+
+        if (_capturingUid)
+        {
+            EditorGUILayout.HelpBox("Waiting — tap a card on the REDbox scanner…", MessageType.Info);
+        }
+
         PropField("cardName", "Display Name");
         PropField("cardType", "Type");
 
@@ -246,6 +350,29 @@ public class CardDatabaseEditor : EditorWindow
         StatField("mp", "MP");
         GUILayout.Space(8f);
         StatField("at", "AT");
+        GUILayout.EndHorizontal();
+
+        // ── Card Art ─────────────────────────────────────────────────────────
+        GUILayout.Space(8f);
+        SectionLabel("Card Art");
+        GUILayout.BeginHorizontal();
+        SerializedProperty artProp = _so.FindProperty("cardArt");
+        if (artProp != null)
+        {
+            // Show a drag-and-drop Texture2D field
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(artProp, new GUIContent("Artwork"));
+            if (EditorGUI.EndChangeCheck()) _dirty = true;
+
+            // Live preview thumbnail
+            if (_selected.cardArt != null)
+            {
+                GUILayout.Space(6f);
+                Rect artRect = GUILayoutUtility.GetRect(72f, 72f,
+                    GUILayout.Width(72f), GUILayout.Height(72f));
+                GUI.DrawTexture(artRect, _selected.cardArt, ScaleMode.ScaleToFit, true);
+            }
+        }
         GUILayout.EndHorizontal();
 
         // ── Type-specific fields (CharacterCard) ──────────────────────────────
@@ -282,6 +409,19 @@ public class CardDatabaseEditor : EditorWindow
         GUILayout.BeginVertical(GUI.skin.box);
         GUILayout.Label("Preview", EditorStyles.boldLabel);
         GUILayout.Space(4f);
+
+        GUILayout.BeginHorizontal();
+
+        // Art thumbnail on the left (when available)
+        if (_selected.cardArt != null)
+        {
+            Rect artR = GUILayoutUtility.GetRect(64f, 64f,
+                GUILayout.Width(64f), GUILayout.Height(64f));
+            GUI.DrawTexture(artR, _selected.cardArt, ScaleMode.ScaleToFit, true);
+            GUILayout.Space(8f);
+        }
+
+        GUILayout.BeginVertical();
         GUILayout.Label($"[{_selected.cardType ?? "—"}]  {_selected.cardName ?? "—"}", EditorStyles.boldLabel);
         if (!string.IsNullOrEmpty(_selected.cardId))
             GUILayout.Label($"ID: {_selected.cardId}", EditorStyles.miniLabel);
@@ -292,6 +432,9 @@ public class CardDatabaseEditor : EditorWindow
             GUILayout.Space(4f);
             GUILayout.Label(_selected.description, EditorStyles.wordWrappedMiniLabel);
         }
+        GUILayout.EndVertical();
+
+        GUILayout.EndHorizontal();
         GUILayout.EndVertical();
     }
 

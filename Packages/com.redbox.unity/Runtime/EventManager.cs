@@ -16,6 +16,9 @@ public class EventManager : MonoBehaviour
 
     public UnityEvent<bool>       OnScannerMissing = new UnityEvent<bool>();
 
+    /// <summary>Fired when the scanner reads a UID that has no matching Card asset.</summary>
+    public UnityEvent<string>     OnUnknownCardScanned = new UnityEvent<string>();
+
     private ArduinoBridge arduinoBridge;
 
     private void Awake()
@@ -52,5 +55,10 @@ public class EventManager : MonoBehaviour
     public void ScannerMissing(bool status)
     {
         OnScannerMissing.Invoke(status);
+    }
+
+    public void UnknownCardScanned(string rawUid)
+    {
+        OnUnknownCardScanned.Invoke(rawUid);
     }
 }

@@ -65,6 +65,10 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Déclenché quand une carte est retirée du lecteur (NFC EXIT).</summary>
     public static event Action<Card> OnCardRemoved;
 
+    /// <summary>Fired when the scanner reads a UID that is not in the card registry.
+    /// Passes the raw normalised UID string so you can display feedback or prompt to register it.</summary>
+    public static event Action<string> OnUnknownCardScanned;
+
     // ─── Privé ────────────────────────────────────────────────────────────────
     private SerialPort            _serialPort;
     private CancellationTokenSource _cts;
@@ -782,6 +786,8 @@ public class ArduinoBridge : MonoBehaviour
         {
             Debug.LogWarning($"[ArduinoBridge] Carte inconnue scannée : '{normalizedInput}'");
             UIDisplayManager.instance?.ShowStatus($"Carte inconnue : {normalizedInput}");
+            OnUnknownCardScanned?.Invoke(normalizedInput);
+            EventManager.Instance?.UnknownCardScanned(normalizedInput);
             return;
         }
 
