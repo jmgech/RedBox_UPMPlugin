@@ -40,6 +40,7 @@ public class REDboxOnboardingWizard : MonoBehaviour
     private bool   _connected;
     private bool   _deviceReady;
     private bool   _emFound;
+    private float  _nextAutoScanTick;
     private readonly Queue<string> _log = new Queue<string>();
     private const int kMaxLog = 6;
 
@@ -118,6 +119,30 @@ public class REDboxOnboardingWizard : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Escape))
             showWizard = !showWizard;
 #endif
+
+        TickAutoScanner();
+    }
+
+    // Mirrors RuntimeSettingsCanvasMenu.TickAutoScanner — retries every 2 s
+    // until the Arduino confirms SCANNER_ON. Handles cases where READY never
+    // arrives or the first ActivateScanner() byte is dropped.
+    private void TickAutoScanner()
+    {
+        var b = ArduinoBridge.Instance;
+        if (b == null || b.State != ArduinoBridge.ConnectionState.Connected) return;
+
+        // Keep label in sync with actual scanner state
+        if (b.ScannerEnabled && !_deviceReady)
+        {
+            _deviceReady = true;
+            _connLabel   = "\u25cf  Ready \u2014 scanning";
+        }
+
+        if (b.ScannerEnabled || b.PendingScannerEnable) return;
+        if (Time.unscaledTime < _nextAutoScanTick) return;
+
+        _nextAutoScanTick = Time.unscaledTime + 2f;
+        b.ActivateScanner();
     }
 
     // ── Event handlers ────────────────────────────────────────────────────────
@@ -270,17 +295,19 @@ public class REDboxOnboardingWizard : MonoBehaviour
             _stMono);
         EndCard();
 
+        GUILayout.Space(14f);
+        GUILayout.Label(
+            "Plug the Arduino into a USB port on your computer.\n" +
+            "The REDbox firmware will start automatically and signal when ready.",
+            _stBody);
         GUILayout.Space(10f);
-        GUILayout.Label("1.  Stack the PN532 NFC shield on your Arduino.", _stBody);
-        GUILayout.Label("2.  Flash the REDbox firmware via Arduino IDE.", _stBody);
-        GUILayout.Label("3.  Open the Serial Monitor at 9600 baud — you should see:", _stBody);
-        GUILayout.Space(4f);
-        BeginCard();
-        GUILayout.Label("  V1|SYS|STATE=READY", _stMono);
-        EndCard();
+        GUILayout.Label(
+            "Once connected, REDbox auto-detects the port and activates the scanner.\n" +
+            "Tap a card on the reader — the Live Monitor (screen 4) will update immediately.",
+            _stBody);
         GUILayout.Space(10f);
         BeginCard();
-        GUILayout.Label("Firmware:  REDbox_Sketch / NFC_WRITER_READER / src / main.cpp", _stMeta);
+        GUILayout.Label("Make sure no other application (e.g. Arduino IDE Serial Monitor) is holding the port open.", _stMeta);
         EndCard();
     }
 
