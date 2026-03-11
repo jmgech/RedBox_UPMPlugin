@@ -59,6 +59,12 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Déclenché sur le Main Thread quand l'état prêt (Connected + READY) change.</summary>
     public static event Action<bool> OnDeviceReadyChanged;
 
+    /// <summary>Déclenché quand une carte est posée sur le lecteur (NFC ENTER / TAP).</summary>
+    public static event Action<Card> OnCardPresented;
+
+    /// <summary>Déclenché quand une carte est retirée du lecteur (NFC EXIT).</summary>
+    public static event Action<Card> OnCardRemoved;
+
     // ─── Privé ────────────────────────────────────────────────────────────────
     private SerialPort            _serialPort;
     private CancellationTokenSource _cts;
@@ -716,6 +722,12 @@ public class ArduinoBridge : MonoBehaviour
             case "EXIT":
                 UIDisplayManager.instance?.ClearAll();
                 UIDisplayManager.instance?.ShowTemporaryStatus($"Carte retirée: {uid}", 1.5f);
+                // Fire CardRemoved if we can resolve the card
+                if (TryResolveCard(uid, out _, out Card removedCard))
+                {
+                    OnCardRemoved?.Invoke(removedCard);
+                    EventManager.Instance.CardRemoved(removedCard);
+                }
                 return true;
 
             default:
@@ -781,8 +793,9 @@ public class ArduinoBridge : MonoBehaviour
 
         Debug.Log($"[ArduinoBridge] ✓ Carte : {card.cardName} (ID: {card.cardId})");
 
-        // Déclenche l'événement global (EventActivator l'écoute)
-        EventManager.Instance.CardScanned(card, true);
+        // Fire the granular event; CardPresented also invokes the legacy CardScanned.
+        OnCardPresented?.Invoke(card);
+        EventManager.Instance.CardPresented(card);
 
         // Met à jour l'UI
         UIDisplayManager.instance?.ShowCard(card);
