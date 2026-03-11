@@ -248,52 +248,75 @@ public class ArduinoBridge : MonoBehaviour
 
     /// <summary>
     /// Construit un dictionnaire cardId → Card pour une recherche O(1).
-    /// Bien plus performant qu'une boucle foreach sur tableau.
+    /// Sources (par ordre de priorité décroissante) :
+    ///   1. cardDataArray  — assignations explicites dans l'Inspector (priorité maximale).
+    ///   2. Resources.LoadAll — tous les Card assets placés dans n'importe quel dossier
+    ///      Resources/ du projet. Aucun drag requis ; ajoutez un asset et relancez.
     /// </summary>
     private void BuildCardRegistry()
     {
         _cardRegistry = new Dictionary<string, Card>(StringComparer.OrdinalIgnoreCase);
 
-        if (cardDataArray == null || cardDataArray.Length == 0)
+        // ── Pass 1 : explicit Inspector assignments (highest priority) ────────
+        if (cardDataArray != null)
         {
-            Debug.LogWarning("[ArduinoBridge] Aucune carte assignée dans cardDataArray.");
-            return;
+            foreach (Card card in cardDataArray)
+                RegisterCard(card, "Inspector");
         }
 
-        int registered = 0;
-        foreach (Card card in cardDataArray)
+        // ── Pass 2 : auto-load from all Resources folders ─────────────────────
+        // Any Card asset inside any Assets/.../Resources/ folder is discovered
+        // automatically. Inspector entries already registered are skipped (no override).
+        Card[] resourceCards = Resources.LoadAll<Card>(string.Empty);
+        int autoCount = 0;
+        foreach (Card card in resourceCards)
         {
-            if (card == null) continue;
-
-            string normalizedId = NormalizeCardId(card.cardId);
-            if (string.IsNullOrEmpty(normalizedId))
-            {
-                Debug.LogWarning($"[ArduinoBridge] Card ignorée (ID invalide): '{card.cardName}'");
-                continue;
-            }
-
-            if (_cardRegistry.ContainsKey(normalizedId))
-            {
-                Debug.LogWarning($"[ArduinoBridge] ID en doublon ignoré : '{normalizedId}' ({card.cardName})");
-                continue;
-            }
-
-            _cardRegistry.Add(normalizedId, card);
-            registered++;
-
-            // Backward-compat alias: if cardId uses the legacy "id:name:type" format
-            // (e.g. "001:Greta:Student"), also register the first token ("001") so new
-            // firmware — which sends UID=001 — resolves the card without asset migration.
-            string aliasId = NormalizeFirstToken(card.cardId);
-            if (!string.IsNullOrEmpty(aliasId)
-                && !aliasId.Equals(normalizedId, StringComparison.OrdinalIgnoreCase)
-                && !_cardRegistry.ContainsKey(aliasId))
-            {
-                _cardRegistry.Add(aliasId, card);
-            }
+            string normalizedId = NormalizeCardId(card?.cardId);
+            if (string.IsNullOrEmpty(normalizedId)) continue;
+            // Skip if already registered by Inspector pass
+            if (_cardRegistry.ContainsKey(normalizedId)) continue;
+            if (RegisterCard(card, "Resources")) autoCount++;
         }
 
-        Debug.Log($"[ArduinoBridge] Registre : {registered} carte(s) chargée(s).");
+        int total = _cardRegistry.Count;
+        if (total == 0)
+            Debug.LogWarning("[ArduinoBridge] Aucune carte trouvée. " +
+                "Assignez des Card assets dans cardDataArray ou placez-les dans un dossier Resources/.");
+        else
+            Debug.Log($"[ArduinoBridge] Registre : {total} entrée(s) " +
+                $"({total - autoCount} Inspector, {autoCount} Resources).");
+    }
+
+    /// <summary>Registers one Card into the registry; returns true if added.</summary>
+    private bool RegisterCard(Card card, string source)
+    {
+        if (card == null) return false;
+
+        string normalizedId = NormalizeCardId(card.cardId);
+        if (string.IsNullOrEmpty(normalizedId))
+        {
+            Debug.LogWarning($"[ArduinoBridge] Card ignorée (ID invalide) [{source}]: '{card.cardName}'");
+            return false;
+        }
+
+        if (_cardRegistry.ContainsKey(normalizedId))
+        {
+            Debug.LogWarning($"[ArduinoBridge] ID en doublon ignoré [{source}]: '{normalizedId}' ({card.cardName})");
+            return false;
+        }
+
+        _cardRegistry.Add(normalizedId, card);
+
+        // Backward-compat alias: legacy "001:Greta:Student" cardId → also register "001"
+        string aliasId = NormalizeFirstToken(card.cardId);
+        if (!string.IsNullOrEmpty(aliasId)
+            && !aliasId.Equals(normalizedId, StringComparison.OrdinalIgnoreCase)
+            && !_cardRegistry.ContainsKey(aliasId))
+        {
+            _cardRegistry.Add(aliasId, card);
+        }
+
+        return true;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
