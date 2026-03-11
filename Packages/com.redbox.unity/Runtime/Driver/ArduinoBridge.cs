@@ -1269,7 +1269,8 @@ public class ArduinoBridge : MonoBehaviour
             return true;
         }
 
-        // 2) Match par préfixe (ex: T001M -> T001)
+        // 2) Match par préfixe forward (ex: T001M -> T001)
+        // Input starts with a registry key — handles legacy normalised IDs sent by old firmware.
         string bestKey = null;
         foreach (KeyValuePair<string, Card> kvp in _cardRegistry)
         {
@@ -1284,6 +1285,27 @@ public class ArduinoBridge : MonoBehaviour
         if (bestKey != null && _cardRegistry.TryGetValue(bestKey, out card))
         {
             resolvedCardId = bestKey;
+            return true;
+        }
+
+        // 3) Reverse prefix match: registry key starts with the input.
+        // Handles new firmware (UID=001) against old assets whose cardId was saved as
+        // "001GRETASTUDENT" (no colon) — i.e. the alias registration path didn't fire.
+        // Picks the shortest matching key to prefer the most specific asset.
+        string bestReverseKey = null;
+        foreach (KeyValuePair<string, Card> kvp in _cardRegistry)
+        {
+            string key = kvp.Key;
+            if (!key.StartsWith(normalizedInput, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (bestReverseKey == null || key.Length < bestReverseKey.Length)
+                bestReverseKey = key;
+        }
+
+        if (bestReverseKey != null && _cardRegistry.TryGetValue(bestReverseKey, out card))
+        {
+            resolvedCardId = bestReverseKey;
             return true;
         }
 
