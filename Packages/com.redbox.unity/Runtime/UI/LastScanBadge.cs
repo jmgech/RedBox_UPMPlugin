@@ -57,11 +57,12 @@ public class LastScanBadge : MonoBehaviour
     public enum BadgeCorner { BottomLeft, BottomRight, TopLeft, TopRight }
 
     // ── Runtime state ─────────────────────────────────────────────────────────
-    private Card    _card;
-    private float   _hideAt  = -1f;
-    private bool    _flash;
-    private float   _flashUntil;
-    private bool    _visible;
+    private Card        _card;
+    private CardTagData _tagData;    // fallback when card has no ScriptableObject
+    private float       _hideAt  = -1f;
+    private bool        _flash;
+    private float       _flashUntil;
+    private bool        _visible;
 
     // OnGUI resources (lazy init)
     private GUIStyle  _styleLabel;
@@ -82,14 +83,16 @@ public class LastScanBadge : MonoBehaviour
 
     private void Start()
     {
-        ArduinoBridge.OnCardPresented += OnCardPresented;
-        ArduinoBridge.OnCardRemoved  += OnCardRemoved;
+        ArduinoBridge.OnCardPresented      += OnCardPresented;
+        ArduinoBridge.OnCardRemoved        += OnCardRemoved;
+        ArduinoBridge.OnUnknownCardScanned += OnUnknownCardScanned;
     }
 
     private void OnDestroy()
     {
-        ArduinoBridge.OnCardPresented -= OnCardPresented;
-        ArduinoBridge.OnCardRemoved  -= OnCardRemoved;
+        ArduinoBridge.OnCardPresented      -= OnCardPresented;
+        ArduinoBridge.OnCardRemoved        -= OnCardRemoved;
+        ArduinoBridge.OnUnknownCardScanned -= OnUnknownCardScanned;
     }
 
     private void Update()
@@ -108,6 +111,7 @@ public class LastScanBadge : MonoBehaviour
     private void OnCardPresented(Card card)
     {
         _card    = card;
+        _tagData = CardTagData.Empty;
         _visible = true;
         _hideAt  = displayDuration > 0f ? Time.unscaledTime + displayDuration : float.MaxValue;
         _flash   = true;
@@ -122,6 +126,20 @@ public class LastScanBadge : MonoBehaviour
         ApplyToUGUI();
     }
 
+    // Shows a fallback badge for cards that have no ScriptableObject asset.
+    // Uses Name and Type directly from the NDEF tag data so action cards
+    // (Direction, Power) and any unregistered card still get a visible response.
+    private void OnUnknownCardScanned(CardTagData tagData)
+    {
+        _card    = null;
+        _tagData = tagData;
+        _visible = true;
+        _hideAt  = displayDuration > 0f ? Time.unscaledTime + displayDuration : float.MaxValue;
+        _flash   = true;
+        _flashUntil = Time.unscaledTime + 0.9f;
+        ApplyToUGUI();
+    }
+
     // ── uGUI update ───────────────────────────────────────────────────────────
 
     private void ApplyToUGUI()
@@ -129,7 +147,10 @@ public class LastScanBadge : MonoBehaviour
         // Only run when a uGUI field is explicitly assigned.
         if (artImage == null && cardNameText == null) return;
 
-        if (!_visible || _card == null)
+        bool hasCard    = _card != null;
+        bool hasTagData = _tagData.IsValid;
+
+        if (!_visible || (!hasCard && !hasTagData))
         {
             if (artImage      != null) artImage.enabled      = false;
             if (cardNameText  != null) cardNameText.text      = string.Empty;
@@ -139,7 +160,7 @@ public class LastScanBadge : MonoBehaviour
 
         if (artImage != null)
         {
-            if (_card.cardArt != null)
+            if (hasCard && _card.cardArt != null)
             {
                 artImage.sprite  = Sprite.Create(_card.cardArt,
                     new Rect(0, 0, _card.cardArt.width, _card.cardArt.height),
@@ -152,11 +173,19 @@ public class LastScanBadge : MonoBehaviour
             }
         }
 
-        if (cardNameText != null)
-            cardNameText.text = $"[{_card.cardType}]  {_card.cardName}";
+        string displayName = hasCard ? _card.cardName : _tagData.Name;
+        string displayType = hasCard ? _card.cardType : _tagData.Type;
 
-        if (statsText != null && (_card.hp > 0 || _card.mp > 0 || _card.at > 0))
-            statsText.text = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}";
+        if (cardNameText != null)
+            cardNameText.text = $"[{displayType ?? "—"}]  {displayName ?? "—"}";
+
+        if (statsText != null)
+        {
+            if (hasCard && (_card.hp > 0 || _card.mp > 0 || _card.at > 0))
+                statsText.text = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}";
+            else
+                statsText.text = string.Empty;
+        }
     }
 
     // ── OnGUI (no-Canvas mode) ────────────────────────────────────────────────
@@ -165,17 +194,23 @@ public class LastScanBadge : MonoBehaviour
     {
         // Skip if uGUI is wired
         if (artImage != null || cardNameText != null) return;
-        if (!_visible || _card == null) return;
+
+        bool hasCard    = _card != null;
+        bool hasTagData = _tagData.IsValid;
+        if (!_visible || (!hasCard && !hasTagData)) return;
 
         InitGui();
 
+        string displayName = hasCard ? _card.cardName : _tagData.Name;
+        string displayType = hasCard ? _card.cardType : _tagData.Type;
+
         bool   showFlash  = _flash && Time.unscaledTime < _flashUntil;
-        bool   showArt    = _card.cardArt != null;
+        bool   showArt    = hasCard && _card.cardArt != null;
         float  artSz      = showArt ? 56f : 0f;
         float  artPad     = showArt ? 8f  : 0f;
 
-        string nameLine  = $"[{_card.cardType ?? "—"}]  {_card.cardName ?? "—"}";
-        string statsLine = (_card.hp > 0 || _card.mp > 0 || _card.at > 0)
+        string nameLine  = $"[{displayType ?? "—"}]  {displayName ?? "—"}";
+        string statsLine = (hasCard && (_card.hp > 0 || _card.mp > 0 || _card.at > 0))
             ? $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}"
             : string.Empty;
 

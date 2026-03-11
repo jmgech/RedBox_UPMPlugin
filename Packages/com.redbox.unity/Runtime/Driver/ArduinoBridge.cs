@@ -65,9 +65,17 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Déclenché quand une carte est retirée du lecteur (NFC EXIT).</summary>
     public static event Action<Card> OnCardRemoved;
 
-    /// <summary>Fired when the scanner reads a UID that is not in the card registry.
-    /// Passes the raw normalised UID string so you can display feedback or prompt to register it.</summary>
-    public static event Action<string> OnUnknownCardScanned;
+    /// <summary>Fired when the scanner reads a card that has no matching ScriptableObject in the registry.
+    /// Carries the full tag data (Id, Name, Type) decoded from the NDEF payload, so you can display
+    /// feedback, call an API with tagData.Id, or dispatch instantly using tagData.Name / tagData.Type
+    /// — all without needing a ScriptableObject for that card.</summary>
+    public static event Action<CardTagData> OnUnknownCardScanned;
+
+    /// <summary>Fired on every NFC ENTER event, before registry lookup.
+    /// Always carries the structured tag data (Id, Name, Type, TagUid) when the firmware sends them.
+    /// Name and Type may be empty on cache-hit frames (card re-placed in the same session).
+    /// Subscribe here for raw access to every scan regardless of whether the card is registered.</summary>
+    public static event Action<CardTagData> OnCardTagRead;
 
     // ─── Privé ────────────────────────────────────────────────────────────────
     private SerialPort            _serialPort;
@@ -85,6 +93,7 @@ public class ArduinoBridge : MonoBehaviour
     private string                _lastI2cReport = "—";
     private string                _lastTagUid = "—";
     private string                _lastCardSource = "—";
+    private CardTagData           _lastCardTagData;
     private bool                  _scannerRequested;
     private bool                  _scannerEnabled;
     private bool                  _pendingScannerEnable;
@@ -93,6 +102,12 @@ public class ArduinoBridge : MonoBehaviour
     private int                   _consecutiveFailures;
     private string                _runtimePortOverride;
     private DateTime              _lastScanTime;
+
+    // Type-handler registry: keyed by card type (e.g. "DIRECTION", "POWER").
+    // Handlers fire on every ENTER for matching cards, whether or not a ScriptableObject exists.
+    // Register via RegisterTypeHandler(); unregister in OnDestroy to avoid leaks.
+    private static readonly Dictionary<string, List<Action<CardTagData>>> _typeHandlers
+        = new Dictionary<string, List<Action<CardTagData>>>(StringComparer.OrdinalIgnoreCase);
 
     // Regex compilée une seule fois (pas recréée à chaque ligne reçue)
     private static readonly Regex _fullFormatRegex = new Regex(
@@ -120,6 +135,8 @@ public class ArduinoBridge : MonoBehaviour
     public string LastI2cReport      => _lastI2cReport;
     public string LastTagUid         => _lastTagUid;
     public string LastCardSource     => _lastCardSource;
+    /// <summary>Tag data from the most recent NFC ENTER event (Id, Name, Type, TagUid).</summary>
+    public CardTagData LastCardTagData => _lastCardTagData;
     public bool ScannerRequested     => _scannerRequested;
     public bool ScannerEnabled       => _scannerEnabled;
     public bool PendingScannerEnable => _pendingScannerEnable;
@@ -243,6 +260,7 @@ public class ArduinoBridge : MonoBehaviour
             return;
         }
 
+        int registered = 0;
         foreach (Card card in cardDataArray)
         {
             if (card == null) continue;
@@ -261,9 +279,21 @@ public class ArduinoBridge : MonoBehaviour
             }
 
             _cardRegistry.Add(normalizedId, card);
+            registered++;
+
+            // Backward-compat alias: if cardId uses the legacy "id:name:type" format
+            // (e.g. "001:Greta:Student"), also register the first token ("001") so new
+            // firmware — which sends UID=001 — resolves the card without asset migration.
+            string aliasId = NormalizeFirstToken(card.cardId);
+            if (!string.IsNullOrEmpty(aliasId)
+                && !aliasId.Equals(normalizedId, StringComparison.OrdinalIgnoreCase)
+                && !_cardRegistry.ContainsKey(aliasId))
+            {
+                _cardRegistry.Add(aliasId, card);
+            }
         }
 
-        Debug.Log($"[ArduinoBridge] Registre : {_cardRegistry.Count} carte(s) chargée(s).");
+        Debug.Log($"[ArduinoBridge] Registre : {registered} carte(s) chargée(s).");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -696,10 +726,12 @@ public class ArduinoBridge : MonoBehaviour
 
     private bool HandleV1Card(Dictionary<string, string> fields)
     {
-        string ev = GetField(fields, "EV", "TAP").ToUpperInvariant();
-        string uid = NormalizeCardId(GetField(fields, "UID", string.Empty));
+        string ev     = GetField(fields, "EV", "TAP").ToUpperInvariant();
+        string uid    = NormalizeCardId(GetField(fields, "UID", string.Empty));
+        string name   = GetField(fields, "NAME", string.Empty).Trim().ToUpperInvariant();
+        string type   = GetField(fields, "TYPE", string.Empty).Trim().ToUpperInvariant();
         string tagUid = NormalizeCardId(GetField(fields, "TAGUID", string.Empty));
-        string src = GetField(fields, "SRC", string.Empty).ToUpperInvariant();
+        string src    = GetField(fields, "SRC", string.Empty).ToUpperInvariant();
 
         if (string.IsNullOrEmpty(uid))
         {
@@ -710,13 +742,21 @@ public class ArduinoBridge : MonoBehaviour
         if (string.IsNullOrEmpty(uid)) return false;
 
         if (!string.IsNullOrEmpty(tagUid)) _lastTagUid = tagUid;
-        if (!string.IsNullOrEmpty(src)) _lastCardSource = src;
+        if (!string.IsNullOrEmpty(src))    _lastCardSource = src;
+
+        CardTagData tagData = new CardTagData
+        {
+            Id     = uid,
+            Name   = name,
+            Type   = type,
+            TagUid = tagUid
+        };
 
         switch (ev)
         {
             case "TAP":
             case "ENTER":
-                HandleCardScan(uid);
+                HandleCardTagData(tagData);
                 return true;
 
             case "PRESENT":
@@ -725,8 +765,8 @@ public class ArduinoBridge : MonoBehaviour
 
             case "EXIT":
                 UIDisplayManager.instance?.ClearAll();
-                UIDisplayManager.instance?.ShowTemporaryStatus($"Carte retirée: {uid}", 1.5f);
-                // Fire CardRemoved if we can resolve the card
+                UIDisplayManager.instance?.ShowTemporaryStatus(
+                    string.IsNullOrEmpty(name) ? $"Carte retirée: {uid}" : $"Carte retirée: {name}", 1.5f);
                 if (TryResolveCard(uid, out _, out Card removedCard))
                 {
                     OnCardRemoved?.Invoke(removedCard);
@@ -735,7 +775,7 @@ public class ArduinoBridge : MonoBehaviour
                 return true;
 
             default:
-                HandleCardScan(uid);
+                HandleCardTagData(tagData);
                 return true;
         }
     }
@@ -770,41 +810,62 @@ public class ArduinoBridge : MonoBehaviour
         return fallback;
     }
 
-    private void HandleCardScan(string cardId)
+    // Central scan handler — all card ENTER events flow through here.
+    private void HandleCardTagData(CardTagData tagData)
     {
-        if (string.IsNullOrWhiteSpace(cardId))
+        if (!tagData.IsValid)
         {
             Debug.LogWarning("[ArduinoBridge] Card ID vide reçu.");
             return;
         }
 
-        string normalizedInput = NormalizeCardId(cardId);
-        _lastScannedId = normalizedInput;
-        _lastScanTime  = DateTime.Now;
+        _lastCardTagData = tagData;
+        _lastScannedId   = tagData.Id;
+        _lastScanTime    = DateTime.Now;
 
-        if (!TryResolveCard(normalizedInput, out string resolvedCardId, out Card card))
+        // Always fire raw tag event and type handlers before registry lookup.
+        OnCardTagRead?.Invoke(tagData);
+        FireTypeHandlers(tagData);
+
+        if (!TryResolveCard(tagData.Id, out string resolvedCardId, out Card card))
         {
-            Debug.LogWarning($"[ArduinoBridge] Carte inconnue scannée : '{normalizedInput}'");
-            UIDisplayManager.instance?.ShowStatus($"Carte inconnue : {normalizedInput}");
-            OnUnknownCardScanned?.Invoke(normalizedInput);
-            EventManager.Instance?.UnknownCardScanned(normalizedInput);
+            string display = !string.IsNullOrEmpty(tagData.Name) ? tagData.Name : tagData.Id;
+            string typeHint = !string.IsNullOrEmpty(tagData.Type) ? $" [{tagData.Type}]" : string.Empty;
+            Debug.LogWarning($"[ArduinoBridge] Carte inconnue scannée : '{tagData.Id}'{typeHint} ({display})");
+            UIDisplayManager.instance?.ShowStatus($"Carte inconnue : {display}");
+            OnUnknownCardScanned?.Invoke(tagData);
+            EventManager.Instance?.UnknownCardScanned(tagData.Id);
             return;
         }
 
-        if (!resolvedCardId.Equals(normalizedInput, StringComparison.OrdinalIgnoreCase))
+        if (!resolvedCardId.Equals(tagData.Id, StringComparison.OrdinalIgnoreCase))
         {
-            Debug.Log($"[ArduinoBridge] Alias ID résolu : '{normalizedInput}' -> '{resolvedCardId}'");
+            Debug.Log($"[ArduinoBridge] Alias ID résolu : '{tagData.Id}' -> '{resolvedCardId}'");
             _lastScannedId = resolvedCardId;
         }
 
         Debug.Log($"[ArduinoBridge] ✓ Carte : {card.cardName} (ID: {card.cardId})");
-
-        // Fire the granular event; CardPresented also invokes the legacy CardScanned.
         OnCardPresented?.Invoke(card);
         EventManager.Instance.CardPresented(card);
-
-        // Met à jour l'UI
         UIDisplayManager.instance?.ShowCard(card);
+    }
+
+    // Legacy wrapper: legacy serial formats (A/B/C) don't carry Name/Type.
+    // They build a minimal CardTagData with Id only and route through the same pipeline.
+    private void HandleCardScan(string cardId)
+    {
+        if (string.IsNullOrWhiteSpace(cardId)) return;
+        HandleCardTagData(new CardTagData { Id = NormalizeCardId(cardId) });
+    }
+
+    private static void FireTypeHandlers(CardTagData tagData)
+    {
+        if (string.IsNullOrEmpty(tagData.Type)) return;
+        if (!_typeHandlers.TryGetValue(tagData.Type, out var list)) return;
+        // Iterate a snapshot to tolerate handlers that unregister during invocation.
+        var snapshot = new List<Action<CardTagData>>(list);
+        foreach (var h in snapshot)
+            h?.Invoke(tagData);
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -849,7 +910,7 @@ public class ArduinoBridge : MonoBehaviour
     // ═════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Simule le scan d'une carte par son ID.
+    /// Simulates the scan of a card by its raw ID string.
     /// Fonctionne même sans boîtier physique (debugMode ou en développement).
     /// Utilisé par le DebugOverlay et l'ArduinoBridgeEditor.
     /// </summary>
@@ -863,6 +924,55 @@ public class ArduinoBridge : MonoBehaviour
 
         Debug.Log($"[ArduinoBridge] ► SIMULATION SCAN : '{cardId}'");
         HandleCardScan(cardId);
+    }
+
+    /// <summary>
+    /// Simulates a structured card scan with full tag data (Id, Name, Type).
+    /// Use this overload to test type-handler routing and unknown-card flows
+    /// without a physical scanner.
+    /// </summary>
+    public void SimulateScan(CardTagData tagData)
+    {
+        if (!tagData.IsValid)
+        {
+            Debug.LogWarning("[ArduinoBridge] SimulateScan : tagData invalide (Id vide).");
+            return;
+        }
+
+        Debug.Log($"[ArduinoBridge] ► SIMULATION SCAN : {tagData}");
+        HandleCardTagData(tagData);
+    }
+
+    /// <summary>
+    /// Registers a handler that fires whenever a card with the given type is scanned,
+    /// regardless of whether a ScriptableObject exists for the card.
+    /// Type is matched case-insensitively ("DIRECTION", "direction", "Direction" all match).
+    ///
+    /// Use for instant-action cards (Direction, Power) that need zero-latency dispatch:
+    ///   ArduinoBridge.RegisterTypeHandler("DIRECTION", data => MovePlayer(data.Name));
+    ///   ArduinoBridge.RegisterTypeHandler("POWER",     data => TriggerPower(data.Name));
+    ///
+    /// Always pair with UnregisterTypeHandler() in OnDestroy to avoid stale references.
+    /// </summary>
+    public static void RegisterTypeHandler(string type, Action<CardTagData> handler)
+    {
+        if (string.IsNullOrEmpty(type) || handler == null) return;
+        string key = type.Trim().ToUpperInvariant();
+        if (!_typeHandlers.TryGetValue(key, out var list))
+        {
+            list = new List<Action<CardTagData>>();
+            _typeHandlers[key] = list;
+        }
+        if (!list.Contains(handler)) list.Add(handler);
+    }
+
+    /// <summary>Removes a previously registered type handler.</summary>
+    public static void UnregisterTypeHandler(string type, Action<CardTagData> handler)
+    {
+        if (string.IsNullOrEmpty(type) || handler == null) return;
+        string key = type.Trim().ToUpperInvariant();
+        if (_typeHandlers.TryGetValue(key, out var list))
+            list.Remove(handler);
     }
 
     /// <summary>
@@ -1134,6 +1244,16 @@ public class ArduinoBridge : MonoBehaviour
                                .Replace("0X", string.Empty);
         string compact = Regex.Replace(noPrefix, @"[^0-9A-Za-z]", string.Empty);
         return compact.Trim().ToUpperInvariant();
+    }
+
+    // Returns the normalised first colon-delimited token of a card ID.
+    // Used to register backward-compat aliases for legacy "id:name:type" format assets.
+    // e.g. "001:Greta:Student" → "001",  "001" → "001"
+    private static string NormalizeFirstToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        int colon = value.IndexOf(':');
+        return NormalizeCardId(colon > 0 ? value.Substring(0, colon) : value);
     }
 
     private bool TryResolveCard(string normalizedInput, out string resolvedCardId, out Card card)

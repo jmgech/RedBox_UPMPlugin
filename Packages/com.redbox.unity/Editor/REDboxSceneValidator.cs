@@ -110,7 +110,13 @@ public static class REDboxSceneValidator
                         results.Add(Warning($"Card '{card.cardName}' has an empty Card ID."));
                     else
                     {
-                        string id = card.cardId.Trim().ToUpperInvariant();
+                        string rawId = card.cardId.Trim();
+                        // Warn if ID still uses old "id:name:type" format — migration recommended.
+                        if (rawId.IndexOf(':') >= 0)
+                            results.Add(Warning($"Card '{card.cardName}' has a legacy Card ID '{rawId}'. " +
+                                                $"Consider updating to the short token only (e.g. '{rawId.Split(':')[0]}')."));
+
+                        string id = rawId.ToUpperInvariant().Replace(":", string.Empty);
                         idCounts.TryGetValue(id, out int cnt);
                         idCounts[id] = cnt + 1;
                     }

@@ -68,34 +68,66 @@ public class CardDatabaseEditor : EditorWindow
         SaveIfDirty();
     }
 
-    // Polls ArduinoBridge.LastTagUid every editor frame when capture mode is active.
+    // Polls ArduinoBridge.LastScannedCardId every editor frame when capture mode is active.
+    // LastScannedCardId = the logical ID emitted in UID= (e.g. "001") — the registry key.
+    // Also auto-populates cardName / cardType from LastCardTagData when those fields are blank.
     private void OnEditorUpdate()
     {
         if (!_capturingUid || !EditorApplication.isPlaying) return;
 
         string uid = null;
+        ArduinoBridge bridge = null;
         try
         {
             // Reflection-free: ArduinoBridge is in the Runtime assembly, accessible in Editor.
-            var bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
-            uid = bridge != null ? bridge.LastTagUid : null;
+            bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
+            uid = bridge != null ? bridge.LastScannedCardId : null;
         }
         catch { }
 
         if (string.IsNullOrEmpty(uid) || uid == "—" || uid == _captureBaseUid) return;
 
-        // New UID detected — fill the Card ID field.
+        // New ID detected — fill the Card ID field and optionally Name / Type.
         if (_so != null && _so.targetObject != null)
         {
             _so.Update();
-            SerializedProperty p = _so.FindProperty("cardId");
-            if (p != null)
+
+            SerializedProperty pId = _so.FindProperty("cardId");
+            if (pId != null) pId.stringValue = uid;
+
+            // Auto-populate cardName / cardType from the NDEF tag data when fields are empty.
+            // This saves a manual step for new cards: scan → ID, Name, and Type all filled in.
+            try
             {
-                p.stringValue = uid;
-                _so.ApplyModifiedProperties();
-                EditorUtility.SetDirty(_selected);
-                _dirty = true;
+                if (bridge != null)
+                {
+                    CardTagData tagData = bridge.LastCardTagData;
+                    if (tagData.IsValid)
+                    {
+                        SerializedProperty pName = _so.FindProperty("cardName");
+                        if (pName != null && string.IsNullOrWhiteSpace(pName.stringValue)
+                            && !string.IsNullOrEmpty(tagData.Name))
+                        {
+                            // Convert ALLCAPS tag name to Title Case for readability.
+                            pName.stringValue = System.Globalization.CultureInfo.CurrentCulture
+                                .TextInfo.ToTitleCase(tagData.Name.ToLower());
+                        }
+
+                        SerializedProperty pType = _so.FindProperty("cardType");
+                        if (pType != null && string.IsNullOrWhiteSpace(pType.stringValue)
+                            && !string.IsNullOrEmpty(tagData.Type))
+                        {
+                            pType.stringValue = System.Globalization.CultureInfo.CurrentCulture
+                                .TextInfo.ToTitleCase(tagData.Type.ToLower());
+                        }
+                    }
+                }
             }
+            catch { /* tag data population is best-effort */ }
+
+            _so.ApplyModifiedProperties();
+            EditorUtility.SetDirty(_selected);
+            _dirty = true;
         }
 
         StopCapture();
@@ -107,7 +139,7 @@ public class CardDatabaseEditor : EditorWindow
         try
         {
             var bridge = UnityEngine.Object.FindAnyObjectByType<ArduinoBridge>();
-            _captureBaseUid = bridge != null ? bridge.LastTagUid : string.Empty;
+            _captureBaseUid = bridge != null ? bridge.LastScannedCardId : string.Empty;
         }
         catch { _captureBaseUid = string.Empty; }
         _capturingUid = true;
@@ -295,7 +327,11 @@ public class CardDatabaseEditor : EditorWindow
         if (idProp != null)
         {
             EditorGUI.BeginChangeCheck();
-            GUILayout.Label("Card ID", GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
+            var idLabel = new GUIContent("Card ID",
+                "Short ID token from the NDEF payload — e.g. \"001\", \"T001\", \"DB\", \"P02\".\n" +
+                "Must match the first colon-delimited token written on the physical tag.\n" +
+                "Use ⬤ Capture in Play Mode to auto-fill from a live scan.");
+            GUILayout.Label(idLabel, GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
             idProp.stringValue = EditorGUILayout.TextField(idProp.stringValue);
             if (EditorGUI.EndChangeCheck()) _dirty = true;
         }
