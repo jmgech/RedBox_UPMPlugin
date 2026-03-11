@@ -161,9 +161,13 @@ public class CardDatabaseEditor : EditorWindow
     {
         InitStyles();
 
-        // Auto-refresh every 4 s in case assets change on disk
+        // Auto-refresh every 4 s in case assets change on disk.
+        // Defer via delayCall so Refresh() never mutates _selected mid Layout/Repaint cycle.
         if (EditorApplication.timeSinceStartup - _lastRefresh > 4.0)
-            Refresh();
+        {
+            _lastRefresh = EditorApplication.timeSinceStartup; // prevent re-entry
+            EditorApplication.delayCall += Refresh;
+        }
 
         DrawToolbar();
 
@@ -283,7 +287,8 @@ public class CardDatabaseEditor : EditorWindow
     {
         if (_so == null || _so.targetObject == null)
         {
-            Select(null);
+            // Defer selection clear so we don't mutate _selected between Layout and Repaint.
+            EditorApplication.delayCall += () => { if (_so == null || _so.targetObject == null) Select(null); };
             return;
         }
 
