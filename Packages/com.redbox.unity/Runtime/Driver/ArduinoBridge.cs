@@ -77,6 +77,14 @@ public class ArduinoBridge : MonoBehaviour
     /// Subscribe here for raw access to every scan regardless of whether the card is registered.</summary>
     public static event Action<CardTagData> OnCardTagRead;
 
+    /// <summary>
+    /// Fired on every NFC ENTER, PRESENT, or EXIT event with full protocol metadata.
+    /// Carries a <see cref="RedboxEvent"/> that includes taxonomy type, subtype, dot-notation
+    /// card id, slot id, sequence number, and timestamp — available for both RBX1 and legacy cards.
+    /// Subscribe here when you need protocol-level detail beyond OnCardTagRead.
+    /// </summary>
+    public static event Action<RedboxEvent> OnRedboxEvent;
+
     // ─── Privé ────────────────────────────────────────────────────────────────
     private SerialPort            _serialPort;
     private CancellationTokenSource _cts;
@@ -102,6 +110,7 @@ public class ArduinoBridge : MonoBehaviour
     private int                   _consecutiveFailures;
     private string                _runtimePortOverride;
     private DateTime              _lastScanTime;
+    private int                   _redboxEventSequence;
 
     // Type-handler registry: keyed by card type (e.g. "DIRECTION", "POWER").
     // Handlers fire on every ENTER for matching cards, whether or not a ScriptableObject exists.
@@ -756,6 +765,12 @@ public class ArduinoBridge : MonoBehaviour
         string tagUid = NormalizeCardId(GetField(fields, "TAGUID", string.Empty));
         string src    = GetField(fields, "SRC", string.Empty).ToUpperInvariant();
 
+        // RBX1 taxonomy fields
+        string cardTypeRaw = GetField(fields, "CARDTYPE", string.Empty).Trim().ToLowerInvariant();
+        string subtype     = GetField(fields, "SUBTYPE",  string.Empty).Trim().ToLowerInvariant();
+        string cardId      = GetField(fields, "CARDID",   string.Empty).Trim();
+        string slotId      = GetField(fields, "SLOT",     string.Empty).Trim().ToLowerInvariant();
+
         if (string.IsNullOrEmpty(uid))
         {
             // Certains firmwares peuvent envoyer DATA au lieu de UID en phase de transition.
@@ -767,23 +782,66 @@ public class ArduinoBridge : MonoBehaviour
         if (!string.IsNullOrEmpty(tagUid)) _lastTagUid = tagUid;
         if (!string.IsNullOrEmpty(src))    _lastCardSource = src;
 
+        // Parse taxonomy type string to enum
+        RedboxCardType taxonomyType = cardTypeRaw switch {
+            "actor"       => RedboxCardType.Actor,
+            "instruction" => RedboxCardType.Instruction,
+            "modifier"    => RedboxCardType.Modifier,
+            "lore"        => RedboxCardType.Lore,
+            "cosmetic"    => RedboxCardType.Cosmetic,
+            "world"       => RedboxCardType.World,
+            "system"      => RedboxCardType.System,
+            _             => RedboxCardType.Unknown,
+        };
+
         CardTagData tagData = new CardTagData
         {
-            Id     = uid,
-            Name   = name,
-            Type   = type,
-            TagUid = tagUid
+            Id           = uid,
+            Name         = name,
+            Type         = type,
+            TagUid       = tagUid,
+            TaxonomyType = taxonomyType,
+            Subtype      = subtype,
+            CardId       = cardId,
+            SlotId       = slotId,
         };
+
+        // Build RedboxCard and RedboxEvent for high-fidelity subscribers
+        var rbCard = new RedboxCard(
+            uid:            uid,
+            cardType:       taxonomyType,
+            subtype:        subtype,
+            cardId:         string.IsNullOrEmpty(cardId) ? uid : cardId,
+            physicalTagUid: tagUid,
+            payloadVersion: taxonomyType != RedboxCardType.Unknown ? 1 : 0
+        );
+
+        RedboxEvent.EventType rbEventType = ev switch {
+            "ENTER"   => RedboxEvent.EventType.CardEnter,
+            "PRESENT" => RedboxEvent.EventType.CardPresent,
+            "EXIT"    => RedboxEvent.EventType.CardExit,
+            _         => RedboxEvent.EventType.CardEnter,
+        };
+
+        var rbEvent = new RedboxEvent(
+            type:     rbEventType,
+            card:     rbEventType == RedboxEvent.EventType.CardExit ? null : rbCard,
+            readerId: "reader_1",
+            slotId:   string.IsNullOrEmpty(slotId) ? "center" : slotId,
+            sequence: ++_redboxEventSequence
+        );
 
         switch (ev)
         {
             case "TAP":
             case "ENTER":
                 HandleCardTagData(tagData);
+                OnRedboxEvent?.Invoke(rbEvent);
                 return true;
 
             case "PRESENT":
                 // Heartbeat de présence: pas de retrigger gameplay par défaut.
+                OnRedboxEvent?.Invoke(rbEvent);
                 return true;
 
             case "EXIT":
@@ -795,10 +853,12 @@ public class ArduinoBridge : MonoBehaviour
                     OnCardRemoved?.Invoke(removedCard);
                     EventManager.Instance.CardRemoved(removedCard);
                 }
+                OnRedboxEvent?.Invoke(rbEvent);
                 return true;
 
             default:
                 HandleCardTagData(tagData);
+                OnRedboxEvent?.Invoke(rbEvent);
                 return true;
         }
     }

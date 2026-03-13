@@ -27,6 +27,7 @@ public class CardDatabaseEditor : EditorWindow
     private Card         _selected;
     private SerializedObject _so;
     private string       _search       = string.Empty;
+    private RedboxCardType _taxonomyFilter = RedboxCardType.Unknown; // Unknown = show all
     private Vector2      _listScroll;
     private Vector2      _detailScroll;
     private bool         _dirty;
@@ -202,7 +203,11 @@ public class CardDatabaseEditor : EditorWindow
 
         GUILayout.Label("REDbox  ·  Card Database", EditorStyles.boldLabel, GUILayout.Width(200f));
 
-        _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField);
+        _search = EditorGUILayout.TextField(_search, EditorStyles.toolbarSearchField, GUILayout.MaxWidth(180f));
+
+        GUILayout.Label("Type:", EditorStyles.miniLabel, GUILayout.Width(28f));
+        _taxonomyFilter = (RedboxCardType)EditorGUILayout.EnumPopup(
+            _taxonomyFilter, EditorStyles.toolbarPopup, GUILayout.Width(110f));
 
         if (GUILayout.Button("↺  Refresh", EditorStyles.toolbarButton, GUILayout.Width(80f)))
             Refresh();
@@ -232,7 +237,12 @@ public class CardDatabaseEditor : EditorWindow
             if (!string.IsNullOrEmpty(_search) &&
                 !c.cardName.ToLowerInvariant().Contains(lo) &&
                 !c.cardId.ToLowerInvariant().Contains(lo) &&
-                !c.cardType.ToLowerInvariant().Contains(lo))
+                !c.cardType.ToLowerInvariant().Contains(lo) &&
+                !(c.subtype ?? string.Empty).ToLowerInvariant().Contains(lo))
+                continue;
+
+            // Taxonomy type filter (Unknown = show all)
+            if (_taxonomyFilter != RedboxCardType.Unknown && c.cardTaxonomyType != _taxonomyFilter)
                 continue;
 
             bool isSel = c == _selected;
