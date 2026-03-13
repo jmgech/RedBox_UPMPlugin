@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -108,10 +109,22 @@ public static class FoundersSetGenerator
         new("world.time_state.dusk", "Dusk", RedboxCardType.World, "time_state"),
     };
 
-    // ── Menu entry ─────────────────────────────────────────────────────────────
+    // ── Menu entries ───────────────────────────────────────────────────────────
     [MenuItem("REDbox/Generate Founders Set", priority = 200)]
     public static void GenerateFoundersSet()
     {
+        // ── Step 1: create all required folders first (outside StartAssetEditing
+        //    so AssetDatabase.IsValidFolder reflects them immediately) ──────────
+        var allDirs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (CardDef def in s_catalog)
+            allDirs.Add(Path.GetDirectoryName(BuildAssetPath(def)).Replace('\\', '/'));
+
+        foreach (string dir in allDirs)
+            EnsureDirectory(dir);
+
+        AssetDatabase.Refresh(); // flush folder creation before asset writing
+
+        // ── Step 2: create the ScriptableObject assets ────────────────────────
         int created = 0;
         int skipped = 0;
 
@@ -131,7 +144,6 @@ public static class FoundersSetGenerator
                 Card asset = CreateCardAsset(def);
                 if (asset == null) continue;
 
-                EnsureDirectory(Path.GetDirectoryName(assetPath));
                 AssetDatabase.CreateAsset(asset, assetPath);
                 created++;
             }
@@ -152,6 +164,29 @@ public static class FoundersSetGenerator
 
     [MenuItem("REDbox/Generate Founders Set", validate = true)]
     private static bool ValidateGenerateFoundersSet() => !EditorApplication.isPlaying;
+
+    [MenuItem("REDbox/Clear Founders Set", priority = 201)]
+    public static void ClearFoundersSet()
+    {
+        if (!EditorUtility.DisplayDialog(
+                "Clear Founders Set",
+                $"Delete all assets under {OutputRoot}/ ?\nThis cannot be undone.",
+                "Delete", "Cancel")) return;
+
+        if (AssetDatabase.IsValidFolder(OutputRoot))
+        {
+            AssetDatabase.DeleteAsset(OutputRoot);
+            AssetDatabase.Refresh();
+            Debug.Log($"[FoundersSetGenerator] Cleared {OutputRoot}");
+        }
+        else
+        {
+            Debug.Log("[FoundersSetGenerator] Nothing to clear.");
+        }
+    }
+
+    [MenuItem("REDbox/Clear Founders Set", validate = true)]
+    private static bool ValidateClearFoundersSet() => !EditorApplication.isPlaying;
 
     // ── Helpers ────────────────────────────────────────────────────────────────
     private static string BuildAssetPath(CardDef def)
