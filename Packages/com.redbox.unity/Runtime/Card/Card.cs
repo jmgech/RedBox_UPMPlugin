@@ -18,7 +18,16 @@ public abstract class Card : ScriptableObject
     public int mp;
     public int at;
 
-    [Header("── Art ─────────────────────────────────────────────")]
+    [Header("── REDbox Taxonomy ───────────────────────────────────────────────")]
+    [Tooltip("Taxonomy type mapping to the RBX1 't' field on the physical NFC tag. " +
+             "Set to Unknown for legacy cards not yet migrated to RBX1 format.")]
+    public RedboxCardType cardTaxonomyType;
+
+    [Tooltip("Taxonomy subtype string (RBX1 's' field). " +
+             "E.g. \"ally\", \"attack\", \"buff\", \"memory\". Empty for legacy cards.")]
+    public string subtype;
+
+    [Header("── Art ─────────────────────────────────────────────────────────────")]
     [Tooltip("Optional card artwork. Shown in the Card Database editor and the LastScanBadge widget.")]
     public Texture2D cardArt;
 
