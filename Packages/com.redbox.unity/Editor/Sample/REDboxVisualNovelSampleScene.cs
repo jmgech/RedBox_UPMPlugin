@@ -75,7 +75,8 @@ public static class REDboxVisualNovelSampleScene
         var overlay = overlayGo.AddComponent<REDboxVNSampleOverlay>();
         overlay.controller = controller;
         overlay.showOverlay = true;
-        overlay.showDebugPanel = true;
+        overlay.developerMode = false;
+        overlay.toggleDeveloperModeKey = KeyCode.F3;
         EditorUtility.SetDirty(overlay);
 
         EditorSceneManager.SaveScene(scene, ScenePath);

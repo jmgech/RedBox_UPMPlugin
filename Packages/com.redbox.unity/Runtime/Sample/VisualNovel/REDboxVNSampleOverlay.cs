@@ -8,7 +8,12 @@ public class REDboxVNSampleOverlay : MonoBehaviour
 
     [Header("Display")]
     public bool showOverlay = true;
-    public bool showDebugPanel = true;
+
+    [Tooltip("When enabled, shows low-level simulation tools intended for development only.")]
+    public bool developerMode;
+
+    [Tooltip("Function key used to toggle developer mode at runtime.")]
+    public KeyCode toggleDeveloperModeKey = KeyCode.F3;
 
     private GUIStyle _title;
     private GUIStyle _chapter;
@@ -35,6 +40,12 @@ public class REDboxVNSampleOverlay : MonoBehaviour
 
         if (controller != null)
             controller.OnStateChanged += OnStateChanged;
+    }
+
+    private void Update()
+    {
+        if (Input.GetKeyDown(toggleDeveloperModeKey))
+            developerMode = !developerMode;
     }
 
     private void OnDisable()
@@ -99,7 +110,11 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         if (controller.CanSimulateRecommendedCard())
         {
             string recommended = controller.GetRecommendedCardLabel();
-            if (GUILayout.Button($"Use Recommended Card ({recommended})", _buttonGhost, GUILayout.Height(30f)))
+            string actionLabel = developerMode
+                ? $"Use Recommended Card ({recommended})"
+                : $"Present Story Card ({recommended})";
+
+            if (GUILayout.Button(actionLabel, _buttonGhost, GUILayout.Height(30f)))
                 controller.SimulateRecommendedCard();
             GUILayout.Space(8f);
         }
@@ -142,10 +157,14 @@ public class REDboxVNSampleOverlay : MonoBehaviour
             }
         }
 
-        if (showDebugPanel)
+        GUILayout.Space(8f);
+        GUILayout.Label($"Mode: {(developerMode ? "Developer" : "Player")}", _meta);
+        GUILayout.Label($"Press {toggleDeveloperModeKey} to toggle developer tools.", _meta);
+
+        if (developerMode)
         {
             GUILayout.Space(12f);
-            GUILayout.Label("No-hardware test controls", _chapter);
+            GUILayout.Label("Developer Simulation Tools", _chapter);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Sim Lore/Memory", _buttonGhost, GUILayout.Height(28f)))
                 SimulatePreset("lore.memory.founders", "LORE", RedboxCardType.Lore, "memory");

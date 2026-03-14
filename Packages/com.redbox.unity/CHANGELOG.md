@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.11 - 2026-03-14
+- Switched VN overlay to player mode by default and moved raw simulation fields behind Developer Mode.
+- Added runtime Developer Mode toggle (F3) for accessing low-level simulation tools.
+- Reframed default card assist action as a story-facing prompt in player mode.
+
 ## 0.4.10 - 2026-03-14
 - Reworked the VN sample story into a more dialogue-first, character-driven flow.
 - Added contextual "Use Recommended Card" action to guarantee progression for required card steps.
