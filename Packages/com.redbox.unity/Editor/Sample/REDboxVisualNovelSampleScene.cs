@@ -85,7 +85,7 @@ public static class REDboxVisualNovelSampleScene
 
         if (EditorUtility.DisplayDialog(
             "REDbox Visual Novel Sample",
-            "Sample scene created.\n\nPlay Mode starts in no-hardware mode by default. Use the overlay simulation controls to progress story beats and test card routing.",
+            "Sample scene created.\n\nPlay Mode starts in live-device mode by default (auto-detect port enabled).\nIf you want no-hardware testing, enable HardwareSettings.debugMode manually and use story-card simulation.",
             "Open Scene",
             "Later"))
         {
@@ -96,11 +96,20 @@ public static class REDboxVisualNovelSampleScene
     private static HardwareSettings CreateHardwareSettings()
     {
         var existing = AssetDatabase.LoadAssetAtPath<HardwareSettings>(HardwarePath);
-        if (existing != null) return existing;
+        if (existing != null)
+        {
+            existing.debugMode = false;
+            existing.autoDetectPort = true;
+            existing.autoActivateOnStart = true;
+            EditorUtility.SetDirty(existing);
+            AssetDatabase.SaveAssets();
+            return existing;
+        }
 
         var hw = ScriptableObject.CreateInstance<HardwareSettings>();
-        hw.debugMode = true;
+        hw.debugMode = false;
         hw.autoDetectPort = true;
+        hw.autoActivateOnStart = true;
         hw.baudRate = 9600;
 
         AssetDatabase.CreateAsset(hw, HardwarePath);

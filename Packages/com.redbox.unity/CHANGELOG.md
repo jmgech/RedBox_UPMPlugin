@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.13 - 2026-03-14
+- Improved VN card matching to infer taxonomy/subtype from FoundersSet-style card IDs when metadata fields are incomplete.
+- Updated guided card payloads to use requirement-compatible taxonomy/subtype values with real local card IDs.
+- Changed generated VN sample HardwareSettings to live-device mode by default (debugMode=false, autoActivateOnStart=true).
+
 ## 0.4.12 - 2026-03-14
 - Updated VN sample card assists to prioritize real local card assets discovered in Resources/registry.
 - Added visible "Valid local cards" hints for required card steps.

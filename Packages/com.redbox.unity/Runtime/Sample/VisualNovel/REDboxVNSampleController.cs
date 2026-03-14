@@ -390,14 +390,25 @@ public class REDboxVNSampleController : MonoBehaviour
             ? GetCardDisplayName(matched)
             : matched.cardId;
 
+        RedboxCardType inferredType = InferTaxonomyType(matched);
+        string inferredSubtype = InferSubtype(matched);
+
+        RedboxCardType payloadType = req != null && req.expectedTaxonomyType != RedboxCardType.Unknown
+            ? req.expectedTaxonomyType
+            : inferredType;
+
+        string payloadSubtype = !string.IsNullOrWhiteSpace(req?.expectedSubtype)
+            ? req.expectedSubtype
+            : inferredSubtype;
+
         return new CardTagData
         {
             Id = id,
             CardId = id,
             Name = matched.cardName,
             Type = string.IsNullOrWhiteSpace(matched.cardType) ? matched.cardTaxonomyType.ToString().ToUpperInvariant() : matched.cardType.ToUpperInvariant(),
-            TaxonomyType = matched.cardTaxonomyType,
-            Subtype = matched.subtype,
+            TaxonomyType = payloadType,
+            Subtype = payloadSubtype,
         };
     }
 
@@ -464,15 +475,19 @@ public class REDboxVNSampleController : MonoBehaviour
             if (card == null)
                 continue;
 
-            if (req.expectedTaxonomyType != RedboxCardType.Unknown && card.cardTaxonomyType != req.expectedTaxonomyType)
+            RedboxCardType cardType = InferTaxonomyType(card);
+            string cardSubtype = InferSubtype(card);
+            string cardLegacyType = InferLegacyType(card);
+
+            if (req.expectedTaxonomyType != RedboxCardType.Unknown && cardType != req.expectedTaxonomyType)
                 continue;
 
             if (!string.IsNullOrWhiteSpace(req.expectedSubtype)
-                && !string.Equals(req.expectedSubtype.Trim(), card.subtype?.Trim(), StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(req.expectedSubtype.Trim(), cardSubtype?.Trim(), StringComparison.OrdinalIgnoreCase))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(req.expectedLegacyType)
-                && !string.Equals(req.expectedLegacyType.Trim(), card.cardType?.Trim(), StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(req.expectedLegacyType.Trim(), cardLegacyType?.Trim(), StringComparison.OrdinalIgnoreCase))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(req.expectedId)
@@ -497,5 +512,70 @@ public class REDboxVNSampleController : MonoBehaviour
             return card.cardId;
 
         return card.name;
+    }
+
+    private static RedboxCardType InferTaxonomyType(Card card)
+    {
+        if (card == null)
+            return RedboxCardType.Unknown;
+
+        if (card.cardTaxonomyType != RedboxCardType.Unknown)
+            return card.cardTaxonomyType;
+
+        string id = card.cardId?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            if (id.StartsWith("actor.")) return RedboxCardType.Actor;
+            if (id.StartsWith("instruction.")) return RedboxCardType.Instruction;
+            if (id.StartsWith("modifier.")) return RedboxCardType.Modifier;
+            if (id.StartsWith("lore.")) return RedboxCardType.Lore;
+            if (id.StartsWith("world.")) return RedboxCardType.World;
+            if (id.StartsWith("cosmetic.")) return RedboxCardType.Cosmetic;
+            if (id.StartsWith("system.")) return RedboxCardType.System;
+        }
+
+        string legacy = card.cardType?.Trim().ToLowerInvariant();
+        return legacy switch
+        {
+            "actor" => RedboxCardType.Actor,
+            "instruction" => RedboxCardType.Instruction,
+            "modifier" => RedboxCardType.Modifier,
+            "lore" => RedboxCardType.Lore,
+            "world" => RedboxCardType.World,
+            "cosmetic" => RedboxCardType.Cosmetic,
+            "system" => RedboxCardType.System,
+            _ => RedboxCardType.Unknown,
+        };
+    }
+
+    private static string InferSubtype(Card card)
+    {
+        if (card == null)
+            return string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(card.subtype))
+            return card.subtype.Trim().ToLowerInvariant();
+
+        string id = card.cardId?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(id))
+            return string.Empty;
+
+        string[] parts = id.Split('.');
+        if (parts.Length >= 2)
+            return parts[1];
+
+        return string.Empty;
+    }
+
+    private static string InferLegacyType(Card card)
+    {
+        if (card == null)
+            return string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(card.cardType))
+            return card.cardType.Trim();
+
+        RedboxCardType type = InferTaxonomyType(card);
+        return type == RedboxCardType.Unknown ? string.Empty : type.ToString();
     }
 }
