@@ -75,6 +75,7 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         string chapter = node != null && !string.IsNullOrWhiteSpace(node.chapter) ? node.chapter : "Prologue";
         string speaker = node != null && !string.IsNullOrWhiteSpace(node.speaker) ? node.speaker : "Narrator";
         string body = node != null ? node.text : "Press Begin to start the REDbox sample visual novel.";
+        string hint = node != null ? node.learningHint : string.Empty;
 
         GUILayout.Label(controller.storyData != null ? controller.storyData.storyTitle : "REDbox VN", _title);
         GUILayout.Label(chapter, _chapter);
@@ -82,6 +83,12 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         GUILayout.Label(speaker, _speaker);
         GUILayout.Space(10f);
         GUILayout.Label(body, _body);
+
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            GUILayout.Space(8f);
+            GUILayout.Label($"Learning Goal: {hint}", _meta);
+        }
 
         GUILayout.FlexibleSpace();
 
@@ -121,6 +128,8 @@ public class REDboxVNSampleOverlay : MonoBehaviour
                 else
                 {
                     GUILayout.Label($"{label} (card required)", _meta);
+                    if (!string.IsNullOrWhiteSpace(choice.learningHint))
+                        GUILayout.Label($"  {choice.learningHint}", _meta);
                 }
             }
         }

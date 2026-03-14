@@ -64,6 +64,10 @@ public class VNNode
     [TextArea(3, 8)]
     public string text;
 
+    [TextArea(2, 5)]
+    [Tooltip("Pedagogical hint shown to explain why this step exists.")]
+    public string learningHint;
+
     [Tooltip("Optional logical background key for custom UI themes.")]
     public string backgroundKey;
 
@@ -86,6 +90,10 @@ public class VNChoice
     public string id;
     public string label;
     public string nextNodeId;
+
+    [TextArea(1, 3)]
+    [Tooltip("Optional short explanation shown next to this choice.")]
+    public string learningHint;
 
     [Tooltip("When enabled, this choice appears only when a matching card is scanned.")]
     public bool requiresCard;
