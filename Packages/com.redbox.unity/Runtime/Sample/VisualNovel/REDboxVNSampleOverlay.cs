@@ -96,6 +96,14 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         GUILayout.Label($"Last Card: {controller.LastCardDebug}", _meta);
         GUILayout.Space(10f);
 
+        if (controller.CanSimulateRecommendedCard())
+        {
+            string recommended = controller.GetRecommendedCardLabel();
+            if (GUILayout.Button($"Use Recommended Card ({recommended})", _buttonGhost, GUILayout.Height(30f)))
+                controller.SimulateRecommendedCard();
+            GUILayout.Space(8f);
+        }
+
         GUILayout.BeginHorizontal();
         if (!controller.StoryStarted)
         {
@@ -183,10 +191,9 @@ public class REDboxVNSampleOverlay : MonoBehaviour
             Name = cardId,
         };
 
-        if (ArduinoBridge.Instance != null)
-            ArduinoBridge.Instance.SimulateScan(tagData);
-        else
-            controller.SimulateTag(tagData);
+        // Route directly to the sample controller so in-editor VN testing stays deterministic
+        // regardless of hardware bridge state.
+        controller.SimulateTag(tagData);
     }
 
     private void EnsureGui()

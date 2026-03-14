@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.10 - 2026-03-14
+- Reworked the VN sample story into a more dialogue-first, character-driven flow.
+- Added contextual "Use Recommended Card" action to guarantee progression for required card steps.
+- Improved required-card failure feedback with clearer expected taxonomy/subtype messaging.
+- Made sample card simulation route directly through the VN controller for deterministic no-hardware behavior.
+
 ## 0.4.9 - 2026-03-14
 - Refined the visual novel sample into a coherent mission narrative with clearer educational progression.
 - Added explicit learning-goal hints on story nodes and branch choices.

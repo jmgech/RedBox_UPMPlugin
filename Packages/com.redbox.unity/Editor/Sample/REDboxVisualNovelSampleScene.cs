@@ -125,7 +125,7 @@ public static class REDboxVisualNovelSampleScene
         }
 
         var story = ScriptableObject.CreateInstance<REDboxVNStoryData>();
-        story.storyTitle = "Sakura Protocol: First Day at REDbox Academy";
+        story.storyTitle = "Sakura Protocol: Academy Trial";
         story.startNodeId = "intro";
         story.nodes = new[]
         {
@@ -134,8 +134,17 @@ public static class REDboxVisualNovelSampleScene
                 id = "intro",
                 chapter = "Prologue - First Day",
                 speaker = "Aiko",
-                text = "Welcome, Cadet. Today you will run one complete REDbox mission: recover a memory shard, travel to the right district, recruit an ally, and solve a crisis.",
-                learningHint = "This sample teaches scan -> event -> game state changes in a full loop.",
+                text = "You made it. I am Aiko, your guide for the Academy Trial. Relax, this is half training and half story.",
+                learningHint = "A VN starts with character voice and scene context.",
+                nextNodeId = "intro_ren",
+            },
+            new VNNode
+            {
+                id = "intro_ren",
+                chapter = "Prologue - First Day",
+                speaker = "Ren",
+                text = "I will monitor your card decisions. Every card you use changes the story state in real time.",
+                learningHint = "REDbox card scans are story inputs, not just UI buttons.",
                 nextNodeId = "memory_brief",
             },
             new VNNode
@@ -143,8 +152,8 @@ public static class REDboxVisualNovelSampleScene
                 id = "memory_brief",
                 chapter = "Chapter 1 - Why Lore Cards Matter",
                 speaker = "Ren",
-                text = "The city map is encrypted. Only a Lore/Memory card can unlock the briefing archive.",
-                learningHint = "Lore cards represent narrative knowledge and quest progression.",
+                text = "Our city map is encrypted. We need one memory shard from the archive before we can move.",
+                learningHint = "Lore cards unlock narrative knowledge.",
                 nextNodeId = "lore_gate",
             },
             new VNNode
@@ -152,8 +161,8 @@ public static class REDboxVisualNovelSampleScene
                 id = "lore_gate",
                 chapter = "Chapter 1 - Memory Card",
                 speaker = "Aiko",
-                text = "Scan a Lore card with subtype memory to reveal the mission dossier.",
-                learningHint = "Required card: taxonomy Lore + subtype memory.",
+                text = "Show me a Lore card tagged as memory. If you are testing without hardware, use the recommended card button.",
+                learningHint = "Required card: Lore/memory.",
                 requiresCard = true,
                 requiredCard = new VNCardRequirement
                 {
@@ -168,8 +177,17 @@ public static class REDboxVisualNovelSampleScene
                 id = "memory_success",
                 chapter = "Chapter 1 - Dossier Open",
                 speaker = "System",
-                text = "Dossier unlocked: 'Incident at Moonlit District'. Destination identified.",
-                learningHint = "Successful scan immediately advances narrative state.",
+                text = "Archive opened. Incident identified: unstable reactor at Moonlit District.",
+                learningHint = "Correct scan instantly transitions to the next narrative beat.",
+                nextNodeId = "world_brief",
+            },
+            new VNNode
+            {
+                id = "world_brief",
+                chapter = "Chapter 2 - Route Planning",
+                speaker = "Ren",
+                text = "Now we pick the destination card. World cards decide where this scene takes place.",
+                learningHint = "World cards control location context.",
                 nextNodeId = "world_gate",
             },
             new VNNode
@@ -177,7 +195,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "world_gate",
                 chapter = "Chapter 2 - World Control",
                 speaker = "System",
-                text = "Scan a World card with subtype location to move the mission from Academy HQ to Moonlit District.",
+                text = "Select a World/location card to travel from Academy HQ to Moonlit District.",
                 learningHint = "World cards drive environment and scene context.",
                 requiresCard = true,
                 requiredCard = new VNCardRequirement
@@ -193,8 +211,17 @@ public static class REDboxVisualNovelSampleScene
                 id = "world_success",
                 chapter = "Chapter 2 - Arrival",
                 speaker = "Narrator",
-                text = "Neon rain falls over Moonlit District. Civilians are panicking near the power core.",
+                text = "Neon rain, warning sirens, crowds in panic. The power core is close to collapse.",
                 learningHint = "A world/location scan can be mapped to loading visuals, audio, and NPC sets.",
+                nextNodeId = "ally_brief",
+            },
+            new VNNode
+            {
+                id = "ally_brief",
+                chapter = "Chapter 3 - Party Formation",
+                speaker = "Aiko",
+                text = "You need a partner for core access. Actor cards bring characters into the active scene.",
+                learningHint = "Actor cards represent people joining gameplay state.",
                 nextNodeId = "actor_gate",
             },
             new VNNode
@@ -202,7 +229,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "actor_gate",
                 chapter = "Chapter 3 - Team Building",
                 speaker = "Aiko",
-                text = "You cannot enter the core alone. Scan an Actor card with subtype ally to recruit Hikari.",
+                text = "Recruit Hikari with an Actor/ally card.",
                 learningHint = "Actor cards represent playable allies or enemies entering the scene.",
                 requiresCard = true,
                 requiredCard = new VNCardRequirement
@@ -218,7 +245,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "branch_intro",
                 chapter = "Chapter 4 - Final Decision",
                 speaker = "Ren",
-                text = "Core stability at 12%. Choose a resolution path. Instruction cards branch outcomes based on subtype.",
+                text = "Core stability is falling. Give one final instruction. Your command defines this ending.",
                 learningHint = "Instruction cards are command inputs that can create branching outcomes.",
                 choices = new[]
                 {
@@ -265,7 +292,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "ending_blaze",
                 chapter = "Ending A - Crimson Route",
                 speaker = "Narrator",
-                text = "Hikari channels your command and blasts the corrupted shell. District saved in dramatic style.",
+                text = "Hikari channels your attack command. The reactor shell shatters, then stabilizes. Loud, risky, successful.",
                 learningHint = "Validated taxonomy match: Instruction + attack -> unique narrative outcome.",
                 isEnding = true,
             },
@@ -274,7 +301,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "ending_echo",
                 chapter = "Ending B - Azure Route",
                 speaker = "Narrator",
-                text = "You reroute harmonics and calm the core. District saved with zero collateral damage.",
+                text = "You choose an effect command and tune the harmonics. The reactor calms with zero collateral.",
                 learningHint = "Validated alternate subtype branch: Instruction + effect -> different ending.",
                 isEnding = true,
             },
@@ -283,7 +310,7 @@ public static class REDboxVisualNovelSampleScene
                 id = "ending_manual",
                 chapter = "Ending C - Training Route",
                 speaker = "Narrator",
-                text = "Fallback protocol succeeds. Mission complete even without physical cards.",
+                text = "Fallback protocol succeeds. The mission still completes in UI-only mode.",
                 learningHint = "Confirmed no-hardware compatibility for onboarding and CI-friendly demos.",
                 isEnding = true,
             },

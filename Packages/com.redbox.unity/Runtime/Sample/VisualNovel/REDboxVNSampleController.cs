@@ -129,6 +129,45 @@ public class REDboxVNSampleController : MonoBehaviour
         ProcessTag(tagData);
     }
 
+    public bool CanSimulateRecommendedCard()
+    {
+        if (!StoryStarted || StoryEnded || CurrentNode == null)
+            return false;
+
+        if (CurrentNode.requiresCard)
+            return true;
+
+        if (!CurrentNode.HasChoices)
+            return false;
+
+        for (int i = 0; i < CurrentNode.choices.Length; i++)
+        {
+            if (CurrentNode.choices[i].requiresCard)
+                return true;
+        }
+
+        return false;
+    }
+
+    public string GetRecommendedCardLabel()
+    {
+        if (!CanSimulateRecommendedCard())
+            return "No card required";
+
+        VNCardRequirement req = GetRecommendedRequirement();
+        return BuildRequirementLabel(req);
+    }
+
+    public void SimulateRecommendedCard()
+    {
+        if (!CanSimulateRecommendedCard())
+            return;
+
+        VNCardRequirement req = GetRecommendedRequirement();
+        CardTagData tagData = BuildTagData(req);
+        ProcessTag(tagData);
+    }
+
     private void OnCardTagRead(CardTagData tagData)
     {
         ProcessTag(tagData);
@@ -177,7 +216,7 @@ public class REDboxVNSampleController : MonoBehaviour
             }
             else
             {
-                SetStatus($"Card not valid for this step: {tagData.Id}");
+                SetStatus($"Wrong card for this step: {tagData.Id}. Need {BuildRequirementLabel(CurrentNode.requiredCard)}.");
                 RaiseChanged();
             }
             return;
@@ -240,5 +279,80 @@ public class REDboxVNSampleController : MonoBehaviour
     private void RaiseChanged()
     {
         OnStateChanged?.Invoke();
+    }
+
+    private VNCardRequirement GetRecommendedRequirement()
+    {
+        if (CurrentNode == null)
+            return null;
+
+        if (CurrentNode.requiresCard)
+            return CurrentNode.requiredCard;
+
+        if (CurrentNode.choices != null)
+        {
+            for (int i = 0; i < CurrentNode.choices.Length; i++)
+            {
+                var choice = CurrentNode.choices[i];
+                if (choice.requiresCard)
+                    return choice.requiredCard;
+            }
+        }
+
+        return null;
+    }
+
+    private static CardTagData BuildTagData(VNCardRequirement req)
+    {
+        if (req == null)
+        {
+            return new CardTagData
+            {
+                Id = "instruction.attack.default",
+                CardId = "instruction.attack.default",
+                Type = "INSTRUCTION",
+                TaxonomyType = RedboxCardType.Instruction,
+                Subtype = "attack",
+                Name = "instruction.attack.default",
+            };
+        }
+
+        string subtype = string.IsNullOrWhiteSpace(req.expectedSubtype) ? "default" : req.expectedSubtype;
+        string type = !string.IsNullOrWhiteSpace(req.expectedLegacyType)
+            ? req.expectedLegacyType.ToUpperInvariant()
+            : req.expectedTaxonomyType.ToString().ToUpperInvariant();
+
+        string id = !string.IsNullOrWhiteSpace(req.expectedId)
+            ? req.expectedId
+            : $"{req.expectedTaxonomyType.ToString().ToLowerInvariant()}.{subtype}.sample";
+
+        if (req.expectedTaxonomyType == RedboxCardType.Unknown && string.IsNullOrWhiteSpace(req.expectedLegacyType))
+        {
+            type = "SYSTEM";
+            id = "system.default.sample";
+        }
+
+        return new CardTagData
+        {
+            Id = id,
+            CardId = id,
+            Type = type,
+            TaxonomyType = req.expectedTaxonomyType,
+            Subtype = subtype,
+            Name = id,
+        };
+    }
+
+    private static string BuildRequirementLabel(VNCardRequirement req)
+    {
+        if (req == null)
+            return "any card";
+
+        string typeLabel = req.expectedTaxonomyType != RedboxCardType.Unknown
+            ? req.expectedTaxonomyType.ToString()
+            : (string.IsNullOrWhiteSpace(req.expectedLegacyType) ? "AnyType" : req.expectedLegacyType.ToUpperInvariant());
+
+        string subtypeLabel = string.IsNullOrWhiteSpace(req.expectedSubtype) ? "any-subtype" : req.expectedSubtype;
+        return $"{typeLabel}/{subtypeLabel}";
     }
 }
