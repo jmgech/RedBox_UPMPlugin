@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.16 - 2026-03-14
+- Added in-VN device status panel showing connection state, active port, and scanner on/off status.
+- Added manual device controls in the VN overlay (Connect Device, Activate Scanner, Reconnect).
+- Added automatic scanner activation retry loop in the VN overlay for connected-but-idle hardware sessions.
+
 ## 0.4.15 - 2026-03-14
 - Fixed CS1503 compile error in VN overlay by mapping UnityEngine.KeyCode to UnityEngine.InputSystem.Key.
 - Kept developer-mode toggle compatible across both Input System and legacy input backends.

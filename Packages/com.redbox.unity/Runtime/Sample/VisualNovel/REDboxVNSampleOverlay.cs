@@ -18,6 +18,12 @@ public class REDboxVNSampleOverlay : MonoBehaviour
     [Tooltip("Function key used to toggle developer mode at runtime.")]
     public KeyCode toggleDeveloperModeKey = KeyCode.F3;
 
+    [Tooltip("When enabled, the overlay periodically requests scanner activation while connected.")]
+    public bool autoRequestScannerWhenConnected = true;
+
+    [Tooltip("Retry interval in seconds for scanner activation requests.")]
+    public float scannerRetrySeconds = 2f;
+
     private GUIStyle _title;
     private GUIStyle _chapter;
     private GUIStyle _speaker;
@@ -35,6 +41,7 @@ public class REDboxVNSampleOverlay : MonoBehaviour
     private string _simType = "INSTRUCTION";
     private RedboxCardType _simTaxonomy = RedboxCardType.Instruction;
     private string _simSubtype = "attack";
+    private float _nextScannerRetryAt;
 
     private void OnEnable()
     {
@@ -57,6 +64,8 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         if (Input.GetKeyDown(toggleDeveloperModeKey))
             developerMode = !developerMode;
 #endif
+
+    TickScannerActivation();
     }
 
 #if ENABLE_INPUT_SYSTEM
@@ -143,6 +152,9 @@ public class REDboxVNSampleOverlay : MonoBehaviour
 
         GUILayout.Label($"Status: {controller.StatusLabel}", _status);
         GUILayout.Label($"Last Card: {controller.LastCardDebug}", _meta);
+        GUILayout.Space(10f);
+
+        DrawDeviceSection();
         GUILayout.Space(10f);
 
         if (controller.CanSimulateRecommendedCard())
@@ -256,6 +268,58 @@ public class REDboxVNSampleOverlay : MonoBehaviour
         // Route directly to the sample controller so in-editor VN testing stays deterministic
         // regardless of hardware bridge state.
         controller.SimulateTag(tagData);
+    }
+
+    private void DrawDeviceSection()
+    {
+        ArduinoBridge bridge = ArduinoBridge.Instance;
+        if (bridge == null)
+        {
+            GUILayout.Label("Device: ArduinoBridge not found in scene.", _meta);
+            return;
+        }
+
+        string scanner = bridge.ScannerEnabled ? "ON" : (bridge.PendingScannerEnable ? "PENDING" : "OFF");
+        GUILayout.Label($"Device: {bridge.State} | Port: {bridge.ActivePort} | Scanner: {scanner}", _meta);
+
+        if (bridge.settings == null)
+            GUILayout.Label("HardwareSettings missing on ArduinoBridge.", _meta);
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Connect Device", _buttonGhost, GUILayout.Height(28f)))
+            bridge.Connect();
+
+        if (GUILayout.Button("Activate Scanner", _buttonGhost, GUILayout.Height(28f)))
+            bridge.ActivateScanner();
+
+        if (GUILayout.Button("Reconnect", _buttonGhost, GUILayout.Height(28f)))
+        {
+            bridge.Disconnect();
+            bridge.Connect();
+        }
+        GUILayout.EndHorizontal();
+    }
+
+    private void TickScannerActivation()
+    {
+        if (!autoRequestScannerWhenConnected)
+            return;
+
+        ArduinoBridge bridge = ArduinoBridge.Instance;
+        if (bridge == null)
+            return;
+
+        if (bridge.State != ArduinoBridge.ConnectionState.Connected)
+            return;
+
+        if (bridge.ScannerEnabled || bridge.PendingScannerEnable)
+            return;
+
+        if (Time.unscaledTime < _nextScannerRetryAt)
+            return;
+
+        bridge.ActivateScanner();
+        _nextScannerRetryAt = Time.unscaledTime + Mathf.Max(0.5f, scannerRetrySeconds);
     }
 
     private void EnsureGui()
