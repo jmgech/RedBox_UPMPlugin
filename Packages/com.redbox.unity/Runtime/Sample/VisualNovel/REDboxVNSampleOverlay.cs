@@ -116,6 +116,11 @@ public class REDboxVNSampleOverlay : MonoBehaviour
 
             if (GUILayout.Button(actionLabel, _buttonGhost, GUILayout.Height(30f)))
                 controller.SimulateRecommendedCard();
+
+            string options = controller.GetValidCardOptionsLabel();
+            if (!string.IsNullOrWhiteSpace(options))
+                GUILayout.Label(options, _meta);
+
             GUILayout.Space(8f);
         }
 

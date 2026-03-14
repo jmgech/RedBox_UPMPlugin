@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 [AddComponentMenu("REDbox/Sample/Visual Novel Controller")]
@@ -30,6 +31,7 @@ public class REDboxVNSampleController : MonoBehaviour
 
     private float _autoAdvanceAt;
     private bool _pendingAutoAdvance;
+    private readonly List<Card> _availableCards = new List<Card>();
 
     private void OnEnable()
     {
@@ -43,6 +45,8 @@ public class REDboxVNSampleController : MonoBehaviour
 
     private void Start()
     {
+        RefreshAvailableCards();
+
         if (autoStart)
             StartStory();
     }
@@ -79,6 +83,8 @@ public class REDboxVNSampleController : MonoBehaviour
 
     public void RestartStory()
     {
+        RefreshAvailableCards();
+
         StoryStarted = false;
         StoryEnded = false;
         CurrentNode = null;
@@ -155,7 +161,38 @@ public class REDboxVNSampleController : MonoBehaviour
             return "No card required";
 
         VNCardRequirement req = GetRecommendedRequirement();
+        Card matched = FindFirstMatchingCard(req);
+        if (matched != null)
+            return $"{BuildRequirementLabel(req)} -> {GetCardDisplayName(matched)}";
+
         return BuildRequirementLabel(req);
+    }
+
+    public string GetValidCardOptionsLabel()
+    {
+        if (!CanSimulateRecommendedCard())
+            return "";
+
+        VNCardRequirement req = GetRecommendedRequirement();
+        if (req == null)
+            return "";
+
+        List<Card> matches = FindMatchingCards(req);
+        if (matches.Count == 0)
+            return "No matching local card found. Fallback simulation is available.";
+
+        int showCount = Mathf.Min(4, matches.Count);
+        string label = "Valid local cards: ";
+        for (int i = 0; i < showCount; i++)
+        {
+            if (i > 0) label += ", ";
+            label += GetCardDisplayName(matches[i]);
+        }
+
+        if (matches.Count > showCount)
+            label += $", +{matches.Count - showCount} more";
+
+        return label;
     }
 
     public void SimulateRecommendedCard()
@@ -164,7 +201,7 @@ public class REDboxVNSampleController : MonoBehaviour
             return;
 
         VNCardRequirement req = GetRecommendedRequirement();
-        CardTagData tagData = BuildTagData(req);
+        CardTagData tagData = BuildTagDataFromAvailable(req);
         ProcessTag(tagData);
     }
 
@@ -343,6 +380,27 @@ public class REDboxVNSampleController : MonoBehaviour
         };
     }
 
+    private CardTagData BuildTagDataFromAvailable(VNCardRequirement req)
+    {
+        Card matched = FindFirstMatchingCard(req);
+        if (matched == null)
+            return BuildTagData(req);
+
+        string id = string.IsNullOrWhiteSpace(matched.cardId)
+            ? GetCardDisplayName(matched)
+            : matched.cardId;
+
+        return new CardTagData
+        {
+            Id = id,
+            CardId = id,
+            Name = matched.cardName,
+            Type = string.IsNullOrWhiteSpace(matched.cardType) ? matched.cardTaxonomyType.ToString().ToUpperInvariant() : matched.cardType.ToUpperInvariant(),
+            TaxonomyType = matched.cardTaxonomyType,
+            Subtype = matched.subtype,
+        };
+    }
+
     private static string BuildRequirementLabel(VNCardRequirement req)
     {
         if (req == null)
@@ -354,5 +412,90 @@ public class REDboxVNSampleController : MonoBehaviour
 
         string subtypeLabel = string.IsNullOrWhiteSpace(req.expectedSubtype) ? "any-subtype" : req.expectedSubtype;
         return $"{typeLabel}/{subtypeLabel}";
+    }
+
+    private void RefreshAvailableCards()
+    {
+        _availableCards.Clear();
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        Card[] resourceCards = Resources.LoadAll<Card>(string.Empty);
+        for (int i = 0; i < resourceCards.Length; i++)
+            TryAddCard(resourceCards[i], seen);
+
+        if (ArduinoBridge.Instance != null && ArduinoBridge.Instance.cardDataArray != null)
+        {
+            for (int i = 0; i < ArduinoBridge.Instance.cardDataArray.Length; i++)
+                TryAddCard(ArduinoBridge.Instance.cardDataArray[i], seen);
+        }
+    }
+
+    private void TryAddCard(Card card, HashSet<string> seen)
+    {
+        if (card == null)
+            return;
+
+        string key = string.IsNullOrWhiteSpace(card.cardId)
+            ? card.name
+            : card.cardId.Trim();
+
+        if (string.IsNullOrWhiteSpace(key) || !seen.Add(key))
+            return;
+
+        _availableCards.Add(card);
+    }
+
+    private Card FindFirstMatchingCard(VNCardRequirement req)
+    {
+        List<Card> matches = FindMatchingCards(req);
+        return matches.Count > 0 ? matches[0] : null;
+    }
+
+    private List<Card> FindMatchingCards(VNCardRequirement req)
+    {
+        var result = new List<Card>();
+        if (req == null)
+            return result;
+
+        for (int i = 0; i < _availableCards.Count; i++)
+        {
+            Card card = _availableCards[i];
+            if (card == null)
+                continue;
+
+            if (req.expectedTaxonomyType != RedboxCardType.Unknown && card.cardTaxonomyType != req.expectedTaxonomyType)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(req.expectedSubtype)
+                && !string.Equals(req.expectedSubtype.Trim(), card.subtype?.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(req.expectedLegacyType)
+                && !string.Equals(req.expectedLegacyType.Trim(), card.cardType?.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(req.expectedId)
+                && !string.Equals(req.expectedId.Trim(), card.cardId?.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            result.Add(card);
+        }
+
+        return result;
+    }
+
+    private static string GetCardDisplayName(Card card)
+    {
+        if (card == null)
+            return "UnknownCard";
+
+        if (!string.IsNullOrWhiteSpace(card.cardName))
+            return card.cardName;
+
+        if (!string.IsNullOrWhiteSpace(card.cardId))
+            return card.cardId;
+
+        return card.name;
     }
 }

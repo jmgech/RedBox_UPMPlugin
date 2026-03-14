@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.12 - 2026-03-14
+- Updated VN sample card assists to prioritize real local card assets discovered in Resources/registry.
+- Added visible "Valid local cards" hints for required card steps.
+- Kept synthetic card fallback only when no local matching cards are available.
+
 ## 0.4.11 - 2026-03-14
 - Switched VN overlay to player mode by default and moved raw simulation fields behind Developer Mode.
 - Added runtime Developer Mode toggle (F3) for accessing low-level simulation tools.
