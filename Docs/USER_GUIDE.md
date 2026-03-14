@@ -1,6 +1,6 @@
 # REDbox Unity Integration — User Guide
 
-**Package:** `com.redbox.unity` v0.4.14  
+**Package:** `com.redbox.unity` v0.4.15  
 **Supports:** Unity 2022.3 LTS and above
 
 ---

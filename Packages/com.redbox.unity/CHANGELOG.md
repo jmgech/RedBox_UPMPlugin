@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.15 - 2026-03-14
+- Fixed CS1503 compile error in VN overlay by mapping UnityEngine.KeyCode to UnityEngine.InputSystem.Key.
+- Kept developer-mode toggle compatible across both Input System and legacy input backends.
+
 ## 0.4.14 - 2026-03-14
 - Fixed VN overlay runtime exception when project input handling is set to the Input System package.
 - Updated sample scene open flow to normalize VN HardwareSettings even when the scene already exists.

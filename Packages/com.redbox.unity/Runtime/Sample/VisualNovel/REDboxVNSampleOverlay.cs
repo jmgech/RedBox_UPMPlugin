@@ -48,13 +48,43 @@ public class REDboxVNSampleOverlay : MonoBehaviour
     private void Update()
     {
 #if ENABLE_INPUT_SYSTEM
-        if (Keyboard.current != null && Keyboard.current[toggleDeveloperModeKey].wasPressedThisFrame)
-            developerMode = !developerMode;
+        if (Keyboard.current != null && TryMapKeyCode(toggleDeveloperModeKey, out Key inputKey))
+        {
+            if (Keyboard.current[inputKey].wasPressedThisFrame)
+                developerMode = !developerMode;
+        }
 #else
         if (Input.GetKeyDown(toggleDeveloperModeKey))
             developerMode = !developerMode;
 #endif
     }
+
+#if ENABLE_INPUT_SYSTEM
+    private static bool TryMapKeyCode(KeyCode keyCode, out Key inputKey)
+    {
+        switch (keyCode)
+        {
+            case KeyCode.F1: inputKey = Key.F1; return true;
+            case KeyCode.F2: inputKey = Key.F2; return true;
+            case KeyCode.F3: inputKey = Key.F3; return true;
+            case KeyCode.F4: inputKey = Key.F4; return true;
+            case KeyCode.F5: inputKey = Key.F5; return true;
+            case KeyCode.F6: inputKey = Key.F6; return true;
+            case KeyCode.F7: inputKey = Key.F7; return true;
+            case KeyCode.F8: inputKey = Key.F8; return true;
+            case KeyCode.F9: inputKey = Key.F9; return true;
+            case KeyCode.F10: inputKey = Key.F10; return true;
+            case KeyCode.F11: inputKey = Key.F11; return true;
+            case KeyCode.F12: inputKey = Key.F12; return true;
+            case KeyCode.Escape: inputKey = Key.Escape; return true;
+            case KeyCode.Tab: inputKey = Key.Tab; return true;
+            case KeyCode.BackQuote: inputKey = Key.Backquote; return true;
+            default:
+                inputKey = Key.None;
+                return false;
+        }
+    }
+#endif
 
     private void OnDisable()
     {
