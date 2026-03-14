@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.14 - 2026-03-14
+- Fixed VN overlay runtime exception when project input handling is set to the Input System package.
+- Updated sample scene open flow to normalize VN HardwareSettings even when the scene already exists.
+- Ensured existing VN sample setups are switched back to live-device defaults without recreating the scene.
+
 ## 0.4.13 - 2026-03-14
 - Improved VN card matching to infer taxonomy/subtype from FoundersSet-style card IDs when metadata fields are incomplete.
 - Updated guided card payloads to use requirement-compatible taxonomy/subtype values with real local card IDs.

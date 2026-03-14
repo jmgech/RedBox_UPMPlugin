@@ -17,6 +17,9 @@ public static class REDboxVisualNovelSampleScene
     {
         if (File.Exists(ToAbsolutePath(ScenePath)))
         {
+            EnsureFolders();
+            CreateHardwareSettings();
+
             if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
                 EditorSceneManager.OpenScene(ScenePath);
             return;

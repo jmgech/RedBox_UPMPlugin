@@ -1,4 +1,7 @@
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 [AddComponentMenu("REDbox/Sample/Visual Novel Overlay")]
 public class REDboxVNSampleOverlay : MonoBehaviour
@@ -44,8 +47,13 @@ public class REDboxVNSampleOverlay : MonoBehaviour
 
     private void Update()
     {
+#if ENABLE_INPUT_SYSTEM
+        if (Keyboard.current != null && Keyboard.current[toggleDeveloperModeKey].wasPressedThisFrame)
+            developerMode = !developerMode;
+#else
         if (Input.GetKeyDown(toggleDeveloperModeKey))
             developerMode = !developerMode;
+#endif
     }
 
     private void OnDisable()
