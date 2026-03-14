@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 - 2026-03-14
+- Refined the visual novel sample into a coherent mission narrative with clearer educational progression.
+- Added explicit learning-goal hints on story nodes and branch choices.
+- Added Tools > REDbox > Samples > Reset Visual Novel Story Data to regenerate sample story content after updates.
+
 ## 0.4.8 - 2026-03-14
 - Added a one-click visual novel sample scene generator at Tools > REDbox > Samples > Create Visual Novel Sample.
 - Added a no-hardware visual novel runtime slice with branching story data, card-gated progression, and scan simulation controls.
