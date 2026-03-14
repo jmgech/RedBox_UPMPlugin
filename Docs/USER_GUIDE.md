@@ -1,6 +1,6 @@
 # REDbox Unity Integration — User Guide
 
-**Package:** `com.redbox.unity` v0.3.7  
+**Package:** `com.redbox.unity` v0.4.8  
 **Supports:** Unity 2022.3 LTS and above
 
 ---
@@ -11,16 +11,17 @@
 2. [Requirements](#2-requirements)
 3. [Installation](#3-installation)
 4. [Quick Start — Welcome Scene](#4-quick-start--welcome-scene)
-5. [Hardware Setup](#5-hardware-setup)
-6. [Configuring the Hardware Settings](#6-configuring-the-hardware-settings)
-7. [Creating and Managing Cards](#7-creating-and-managing-cards)
-8. [Registering Cards with ArduinoBridge](#8-registering-cards-with-arduinobridge)
-9. [Responding to Card Events in Your Game](#9-responding-to-card-events-in-your-game)
-10. [Connection Status Indicator](#10-connection-status-indicator)
-11. [Runtime Settings Menu](#11-runtime-settings-menu)
-12. [Debug Tools](#12-debug-tools)
-13. [Testing Without Hardware](#13-testing-without-hardware)
-14. [Troubleshooting](#14-troubleshooting)
+5. [Quick Start — Visual Novel Sample](#5-quick-start--visual-novel-sample)
+6. [Hardware Setup](#6-hardware-setup)
+7. [Configuring the Hardware Settings](#7-configuring-the-hardware-settings)
+8. [Creating and Managing Cards](#8-creating-and-managing-cards)
+9. [Registering Cards with ArduinoBridge](#9-registering-cards-with-arduinobridge)
+10. [Responding to Card Events in Your Game](#10-responding-to-card-events-in-your-game)
+11. [Connection Status Indicator](#11-connection-status-indicator)
+12. [Runtime Settings Menu](#12-runtime-settings-menu)
+13. [Debug Tools](#13-debug-tools)
+14. [Testing Without Hardware](#14-testing-without-hardware)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -82,7 +83,29 @@ The scene contains a four-screen onboarding wizard that walks you through hardwa
 
 ---
 
-## 5. Hardware Setup
+## 5. Quick Start — Visual Novel Sample
+
+The package includes a Japanese-style visual novel sample that teaches REDbox scan flow and card taxonomy.
+
+1. Open **Tools → REDbox → Samples → Create Visual Novel Sample**.
+2. Unity creates and opens: `Assets/REDbox/VNSample/REDbox_VisualNovel_Sample.unity`.
+3. Press **Play**.
+
+By default the scene starts in no-hardware mode (`HardwareSettings.debugMode = true`).
+Use the on-screen simulation buttons to trigger sample cards:
+- Lore/Memory
+- World/Location
+- Actor/Ally
+- Instruction (Attack/Effect)
+
+The sample includes:
+- card-gated progression nodes,
+- branching routes with card subtype checks,
+- fallback manual branch for non-hardware workflows.
+
+---
+
+## 6. Hardware Setup
 
 ### Wiring (USB)
 
@@ -102,7 +125,7 @@ The plugin defaults to **9600 baud**. This must match the `Serial.begin()` call 
 
 ---
 
-## 6. Configuring the Hardware Settings
+## 7. Configuring the Hardware Settings
 
 `HardwareSettings` is a ScriptableObject that centralises all hardware configuration. One asset is shared across your scenes.
 
@@ -130,7 +153,7 @@ Drag the `HardwareSettings` asset into the **Settings** field on the `ArduinoBri
 
 ---
 
-## 7. Creating and Managing Cards
+## 8. Creating and Managing Cards
 
 Each physical NFC card maps to a **Card** ScriptableObject in your Unity project. There are three built-in card types:
 
@@ -170,7 +193,7 @@ Physical NFC cards print their UID on the back, or you can read it using:
 
 ---
 
-## 8. Registering Cards with ArduinoBridge
+## 9. Registering Cards with ArduinoBridge
 
 `ArduinoBridge` must know about your card assets to dispatch the right `Card` object when a scan happens.
 
@@ -191,7 +214,7 @@ ArduinoBridge.Instance.RebuildCardRegistry();
 
 ---
 
-## 9. Responding to Card Events in Your Game
+## 10. Responding to Card Events in Your Game
 
 There are two ways to listen to card events — pick whichever fits your architecture.
 
@@ -263,7 +286,7 @@ The legacy `OnCardScanned(Card, bool)` event is still fired on every card presen
 
 ---
 
-## 10. Connection Status Indicator
+## 11. Connection Status Indicator
 
 The **ConnectionStatusIndicator** component shows the current hardware state as a small LED dot and text label.
 
@@ -295,7 +318,7 @@ In the Inspector, set **Anchor** to one of: `BottomLeft`, `BottomRight`, `TopLef
 
 ---
 
-## 11. Runtime Settings Menu
+## 12. Runtime Settings Menu
 
 The **Runtime Settings Menu** lets you change the port, baud rate, and scanner state while the game is running — no editor access required.
 
@@ -314,7 +337,7 @@ Press **Tab** (or **F2**) during Play Mode. The menu is available in builds too.
 
 ---
 
-## 12. Debug Tools
+## 13. Debug Tools
 
 ### DebugOverlay (F1)
 
@@ -337,7 +360,7 @@ Select the `ArduinoBridge` GameObject in Play Mode. The custom Inspector shows:
 
 ---
 
-## 13. Testing Without Hardware
+## 14. Testing Without Hardware
 
 You can develop and test card interactions before the physical scanner arrives.
 
@@ -362,7 +385,7 @@ Press **F1** to open the overlay → press **Tab** to switch to the Simulation p
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### "No port found" in the Console
 
