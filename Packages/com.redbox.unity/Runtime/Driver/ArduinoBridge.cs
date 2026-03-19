@@ -3,11 +3,33 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Ports;
+using System.Text;
+using SysProcess = System.Diagnostics.Process;
+using SysProcessStartInfo = System.Diagnostics.ProcessStartInfo;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
+
+[Serializable]
+internal class RbxV2Message
+{
+    public string event_type;
+    public long timestamp_ms;
+    public string device_id;
+    public string firmware_version;
+    public string reader_id;
+    public string slot_id;
+    public string uid;
+    public string card_id;
+    public string card_type;
+    public string subtype;
+    public int payload_version;
+    public int sequence;
+    public string error_code;
+    public string message;
+}
 
 /// <summary>
 /// Pont de communication entre le boîtier REDbox (Arduino + NFC) et le jeu Unity.
@@ -30,7 +52,7 @@ using UnityEngine.Networking;
 ///   Format B → "d:cardId"                (ex: "d:A3F2")
 ///   Autre    → affiché comme message de statut brut
 /// </summary>
-public class ArduinoBridge : MonoBehaviour
+public class ArduinoBridge : MonoBehaviour, IRedboxReader
 {
     private const string PreferredPortPlayerPrefKey = "RKNFC.PreferredPort";
 
@@ -85,10 +107,17 @@ public class ArduinoBridge : MonoBehaviour
     /// </summary>
     public static event Action<RedboxEvent> OnRedboxEvent;
 
+    // Instance-level events for reader abstraction consumers.
+    public event Action<ConnectionState> ConnectionStateChanged;
+    public event Action<CardTagData> CardTagRead;
+
     // ─── Privé ────────────────────────────────────────────────────────────────
     private SerialPort            _serialPort;
     private CancellationTokenSource _cts;
     private Dictionary<string, Card> _cardRegistry;
+    // Taxonomy cache: keyed by normalized UID; populated on full ENTER events (with CARDTYPE field),
+    // merged back on cache-hit ENTER events (which only carry UID/TAGUID, no taxonomy).
+    private Dictionary<string, (RedboxCardType taxonomyType, string subtype, string cardId)> _taxonomyCache;
     private Coroutine             _connectionLoopCoroutine;
     private int                   _reconnectAttempts;
     private string                _lastScannedId;
@@ -105,12 +134,17 @@ public class ArduinoBridge : MonoBehaviour
     private bool                  _scannerRequested;
     private bool                  _scannerEnabled;
     private bool                  _pendingScannerEnable;
+    private bool                  _useRbxV2Protocol;
+    private bool                  _manualDisconnectRequested;
+    private bool                  _isReconnectInProgress;
     private DateTime              _scannerEnableRequestedAt;
     private DateTime              _lastConnectAttemptTime = DateTime.MinValue;
     private int                   _consecutiveFailures;
     private string                _runtimePortOverride;
     private DateTime              _lastScanTime;
     private int                   _redboxEventSequence;
+    private readonly StringBuilder _bleLineBuffer = new StringBuilder(512);
+    private bool                  _bleConnected;
 
     // Type-handler registry: keyed by card type (e.g. "DIRECTION", "POWER").
     // Handlers fire on every ENTER for matching cards, whether or not a ScriptableObject exists.
@@ -136,7 +170,11 @@ public class ArduinoBridge : MonoBehaviour
     public string LastConnectionError => _lastConnectionError;
     public DateTime LastScanTime     => _lastScanTime;
     public int CardRegistryCount     => _cardRegistry?.Count ?? 0;
-    public string ActivePort         => _serialPort?.PortName ?? "—";
+    public string ActivePort         =>
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+        _btBridgePortName ??
+#endif
+        _serialPort?.PortName ?? "—";
     public int LastErrorCode         => _lastErrorCode;
     public string LastErrorMessage   => _lastErrorMessage;
     public string LastSysState       => _lastSysState;
@@ -154,6 +192,10 @@ public class ArduinoBridge : MonoBehaviour
     public string ConfiguredPort     => !string.IsNullOrWhiteSpace(_runtimePortOverride)
         ? _runtimePortOverride
         : (settings != null ? settings.serialPort : "—");
+    public bool IsConnected          => State == ConnectionState.Connected;
+    public ReaderSource Source       => settings != null && settings.bluetoothMode
+        ? ReaderSource.ExternalBluetooth
+        : ReaderSource.ExternalUsb;
 
     private bool _lastPublishedReadyState;
 
@@ -180,6 +222,8 @@ public class ArduinoBridge : MonoBehaviour
 
     private void Start()
     {
+        Debug.Log($"[ArduinoBridge] Runtime assembly='{GetType().Assembly.GetName().Name}' bluetoothMode={settings?.bluetoothMode} useBleTransport={settings?.useBleTransport} endpoint='{settings?.bleEndpoint}'");
+
         if (settings == null)
         {
             Debug.LogError("[ArduinoBridge] ⚠ HardwareSettings non assigné ! " +
@@ -230,12 +274,17 @@ public class ArduinoBridge : MonoBehaviour
 
         // Send deactivation command before closing the port so the firmware
         // returns to idle state (scanner off, LED red) instead of staying active.
-        if (_serialPort != null && _serialPort.IsOpen && _scannerEnabled)
+        bool isBluetooth = settings != null && settings.bluetoothMode;
+        if (_serialPort != null && _serialPort.IsOpen && _scannerEnabled && !_useRbxV2Protocol && !isBluetooth)
         {
             try { _serialPort.Write(new byte[] { 0xFF, 0x00 }, 0, 2); }
             catch { /* best-effort — port may already be closing */ }
         }
 
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+        StopBtBridge();
+#endif
+    CloseBleTransport();
         _cts?.Cancel();
         _cts = null;
         if (_connectionLoopCoroutine != null)
@@ -243,12 +292,48 @@ public class ArduinoBridge : MonoBehaviour
             StopCoroutine(_connectionLoopCoroutine);
             _connectionLoopCoroutine = null;
         }
-        try { _serialPort?.Close(); } catch { /* déjà fermé */ }
+        SerialPort portToClose = _serialPort;
+        CloseSerialPortAsync(portToClose);
         _serialPort = null;
         _lastSysState = "—";
         _pendingScannerEnable = false;
         _scannerEnabled = false;
         PublishDeviceReadyStateIfChanged();
+    }
+
+    private bool UseBleTransport => settings != null && settings.bluetoothMode && settings.useBleTransport;
+
+    private string ResolveBleEndpoint()
+    {
+        if (!string.IsNullOrWhiteSpace(settings?.bleEndpoint))
+            return settings.bleEndpoint.Trim();
+
+        if (!string.IsNullOrWhiteSpace(settings?.serialPort))
+            return settings.serialPort.Trim();
+
+        return "REDBOX";
+    }
+
+    private bool TryOpenBleTransport(string endpoint)
+    {
+        _bleConnected = false;
+        _bleLineBuffer.Clear();
+
+        bool started = ArduinoBridgeBleNative.Start(gameObject.name, endpoint);
+        if (!started)
+        {
+            _lastConnectionError = "BLE native bridge start failed";
+            return false;
+        }
+
+        return true;
+    }
+
+    private void CloseBleTransport()
+    {
+        ArduinoBridgeBleNative.Stop();
+        _bleConnected = false;
+        _bleLineBuffer.Clear();
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -264,7 +349,8 @@ public class ArduinoBridge : MonoBehaviour
     /// </summary>
     private void BuildCardRegistry()
     {
-        _cardRegistry = new Dictionary<string, Card>(StringComparer.OrdinalIgnoreCase);
+        _cardRegistry  = new Dictionary<string, Card>(StringComparer.OrdinalIgnoreCase);
+        _taxonomyCache = new Dictionary<string, (RedboxCardType, string, string)>(StringComparer.OrdinalIgnoreCase);
 
         // ── Pass 1 : explicit Inspector assignments (highest priority) ────────
         if (cardDataArray != null)
@@ -342,6 +428,12 @@ public class ArduinoBridge : MonoBehaviour
         {
             while (true)
             {
+                if (_manualDisconnectRequested)
+                {
+                    SetState(ConnectionState.Disconnected);
+                    yield break;
+                }
+
                 // Anti-burst: évite les boucles de connexion ultra-rapides lors des micro-coupures USB.
                 double elapsedSinceLastAttemptMs = (DateTime.UtcNow - _lastConnectAttemptTime).TotalMilliseconds;
                 if (elapsedSinceLastAttemptMs < settings.reconnectThrottleMs)
@@ -354,20 +446,40 @@ public class ArduinoBridge : MonoBehaviour
 
                 SetState(ConnectionState.Connecting);
 
-                string port = ResolvePort();
+                string port = UseBleTransport ? ResolveBleEndpoint() : ResolvePort();
                 if (port == null)
                 {
-                    string available = string.Join(", ", GetAvailablePorts());
+                    string available = UseBleTransport ? "BLE endpoint missing" : string.Join(", ", GetAvailablePorts());
                     Debug.LogWarning($"[ArduinoBridge] Aucun port trouvé. " +
                                      $"Ports disponibles : [{available}]. " +
                                      $"Nouvelle tentative dans {settings.reconnectDelay}s.");
-                    EventManager.Instance.ScannerMissing(true);
+                    EventManager.Instance?.ScannerMissing(true);
                     SetState(ConnectionState.Disconnected);
                     yield return new WaitForSeconds(settings.reconnectDelay);
                     continue;
                 }
 
-                bool opened = TryOpenPort(port);
+                bool opened;
+                if (UseBleTransport)
+                {
+                    opened = TryOpenBleTransport(port);
+                }
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+                else if (settings.bluetoothMode)
+                {
+                    opened = StartBtBridge(port);
+                    if (opened)
+                    {
+                        // Give the bridge time to establish RFCOMM
+                        Debug.Log("[ArduinoBridge] Waiting for BT bridge RFCOMM...");
+                        yield return new WaitForSeconds(4f);
+                    }
+                }
+                else
+#endif
+                {
+                    opened = TryOpenPort(port);
+                }
 
                 if (!opened)
                 {
@@ -379,7 +491,7 @@ public class ArduinoBridge : MonoBehaviour
                         _reconnectAttempts >= settings.maxReconnectAttempts)
                     {
                         Debug.LogError($"[ArduinoBridge] {_reconnectAttempts} tentatives échouées. Abandon.");
-                        EventManager.Instance.ScannerMissing(true);
+                        EventManager.Instance?.ScannerMissing(true);
                         yield break;
                     }
 
@@ -390,25 +502,75 @@ public class ArduinoBridge : MonoBehaviour
                 // ── Connexion établie ─────────────────────────────────────────
                 _reconnectAttempts = 0;
                 _consecutiveFailures = 0;
+
+                if (UseBleTransport)
+                {
+                    float timeout = settings != null ? settings.bleConnectTimeout : 10f;
+                    float elapsed = 0f;
+                    while (!_bleConnected && elapsed < timeout)
+                    {
+                        elapsed += Time.deltaTime;
+                        yield return null;
+                    }
+
+                    if (!_bleConnected)
+                    {
+                        Debug.LogWarning("[ArduinoBridge] Timeout connexion BLE, nouvelle tentative.");
+                        SetState(ConnectionState.Disconnected);
+                        Shutdown();
+                        yield return new WaitForSeconds(GetReconnectDelaySeconds());
+                        continue;
+                    }
+                }
+
+                // BT REDbox sessions run firmware v2 JSON in this project.
+                // Force v2 mode immediately to avoid legacy scanner handshake timeout
+                // (which would otherwise surface as "scanner introuvable" a few seconds later).
+                bool forceV2ForRedboxBt = UseBleTransport ||
+                    (settings.bluetoothMode && port.IndexOf("redbox", StringComparison.OrdinalIgnoreCase) >= 0);
+                if (forceV2ForRedboxBt)
+                {
+                    _useRbxV2Protocol = true;
+                    _pendingScannerEnable = false;
+                    _scannerEnabled = true;
+                    _scannerRequested = true;
+                    _lastSysState = "READY";
+                    PublishDeviceReadyStateIfChanged();
+                }
+
                 SetState(ConnectionState.Connected);
-                EventManager.Instance.ScannerMissing(false);
+                EventManager.Instance?.ScannerMissing(false);
 
-                Debug.Log($"[ArduinoBridge] ✓ Connecté sur {port} @ {settings.baudRate} baud" +
-                          (settings.bluetoothMode ? " [Bluetooth]" : " [USB]"));
+                Debug.Log($"[ArduinoBridge] ✓ Connecté sur {port}" +
+                          (UseBleTransport ? " [Bluetooth LE]" : (settings.bluetoothMode ? " [Bluetooth]" : $" @ {settings.baudRate} baud [USB]")));
 
-                // Lancer la lecture série en background
-                _cts = new CancellationTokenSource();
-                _ = ReadSerialAsync(_cts.Token);
+                if (!UseBleTransport)
+                {
+                    // Lancer la lecture série en background
+                    _cts = new CancellationTokenSource();
+                    _ = ReadSerialAsync(_cts.Token);
+                }
 
                 // Attendre la déconnexion (ReadSerialAsync changera l'état quand ça plante)
                 while (State == ConnectionState.Connected)
                 {
+                    if (UseBleTransport && !_bleConnected)
+                    {
+                        SetState(ConnectionState.Disconnected);
+                        break;
+                    }
                     CheckPendingScannerEnableTimeout();
                     yield return null;
                 }
 
                 // ── Déconnexion détectée ──────────────────────────────────────
                 Shutdown();
+
+                if (_manualDisconnectRequested)
+                {
+                    SetState(ConnectionState.Disconnected);
+                    yield break;
+                }
 
                 _reconnectAttempts++;
                 _consecutiveFailures++;
@@ -439,14 +601,60 @@ public class ArduinoBridge : MonoBehaviour
     {
         string[] available = GetAvailablePorts();
 
+        static string NormalizePortName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            string port = raw.Trim();
+            if (port.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase))
+                return port;
+            if (port.StartsWith("cu.", StringComparison.OrdinalIgnoreCase)
+                || port.StartsWith("tty.", StringComparison.OrdinalIgnoreCase))
+                return "/dev/" + port;
+            return port;
+        }
+
+        // On macOS, cu.* is the "call-up" (outgoing) device: opening it initiates
+        // the RFCOMM connection to the ESP32 BT server.
+        // tty.* is the incoming device: it blocks waiting for the remote to call in,
+        // which the ESP32 BluetoothSerial server never does.
+        // Always prefer cu.* in Bluetooth mode.
+        static string BtCuCounterpart(string port)
+        {
+            if (string.IsNullOrWhiteSpace(port)) return string.Empty;
+            if (port.StartsWith("/dev/tty.", StringComparison.OrdinalIgnoreCase))
+                return "/dev/cu." + port.Substring("/dev/tty.".Length);
+            if (port.StartsWith("/dev/cu.", StringComparison.OrdinalIgnoreCase))
+                return port; // already the outgoing form
+            return string.Empty;
+        }
+
         // Runtime-selected port has top priority if still present.
         if (!string.IsNullOrWhiteSpace(_runtimePortOverride))
         {
+            string normalizedOverride = NormalizePortName(_runtimePortOverride);
+            string btCuOverride = settings != null && settings.bluetoothMode
+                ? BtCuCounterpart(normalizedOverride)
+                : string.Empty;
+
+            // Prefer cu.* in BT mode — it initiates the outgoing RFCOMM connection.
+            if (!string.IsNullOrWhiteSpace(btCuOverride) && File.Exists(btCuOverride))
+                return btCuOverride;
+
             foreach (string port in available)
             {
-                if (port.Equals(_runtimePortOverride, StringComparison.OrdinalIgnoreCase))
+                if (port.Equals(_runtimePortOverride, StringComparison.OrdinalIgnoreCase)
+                    || port.Equals(normalizedOverride, StringComparison.OrdinalIgnoreCase))
+                    return port;
+                if (!string.IsNullOrWhiteSpace(btCuOverride)
+                    && port.Equals(btCuOverride, StringComparison.OrdinalIgnoreCase))
                     return port;
             }
+
+            // If user supplied an explicit /dev path (or cu./tty. shorthand),
+            // try it directly even when enumeration misses it on this frame.
+            if (!string.IsNullOrWhiteSpace(normalizedOverride)
+                && normalizedOverride.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase))
+                return normalizedOverride;
         }
 
         if (settings.autoDetectPort)
@@ -469,11 +677,27 @@ public class ArduinoBridge : MonoBehaviour
         // Port explicitement configuré
         if (!string.IsNullOrWhiteSpace(settings.serialPort))
         {
+            string normalizedConfigured = NormalizePortName(settings.serialPort);
+            string btCuConfigured = settings != null && settings.bluetoothMode
+                ? BtCuCounterpart(normalizedConfigured)
+                : string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(btCuConfigured) && File.Exists(btCuConfigured))
+                return btCuConfigured;
+
             foreach (string port in available)
             {
-                if (port.Equals(settings.serialPort, StringComparison.OrdinalIgnoreCase))
+                if (port.Equals(settings.serialPort, StringComparison.OrdinalIgnoreCase)
+                    || port.Equals(normalizedConfigured, StringComparison.OrdinalIgnoreCase))
+                    return port;
+                if (!string.IsNullOrWhiteSpace(btCuConfigured)
+                    && port.Equals(btCuConfigured, StringComparison.OrdinalIgnoreCase))
                     return port;
             }
+
+            if (!string.IsNullOrWhiteSpace(normalizedConfigured)
+                && normalizedConfigured.StartsWith("/dev/", StringComparison.OrdinalIgnoreCase))
+                return normalizedConfigured;
         }
 
         return null;
@@ -483,14 +707,190 @@ public class ArduinoBridge : MonoBehaviour
     // OUVERTURE / FERMETURE PORT
     // ═════════════════════════════════════════════════════════════════════════
 
+    // ── macOS BT SPP: subprocess bridge ────────────────────────────────────
+    // Mono's SerialPort cannot establish RFCOMM on macOS BT SPP virtual ports.
+    // We launch a small Python script (proven to work) as a subprocess and
+    // read JSON lines from its stdout.  Clean, no P/Invoke, no crashes.
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+    private SysProcess  _btBridge;
+    private string   _btBridgePortName;
+
+    private static readonly string BtBridgeScript = @"
+import os, sys, termios, fcntl, select, signal, traceback
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+try:
+    port = sys.argv[1]
+    sys.stderr.write(f'[bt_bridge] opening {port}\n')
+    sys.stderr.flush()
+    fd = os.open(port, os.O_RDWR | os.O_NONBLOCK | os.O_NOCTTY)
+    fcntl.ioctl(fd, termios.TIOCEXCL)
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+    attrs = termios.tcgetattr(fd)
+    attrs[0] = 0
+    attrs[1] = 0
+    attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+    attrs[3] = 0
+    attrs[4] = termios.B9600
+    attrs[5] = termios.B9600
+    attrs[6][termios.VMIN] = 1
+    attrs[6][termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    os.write(fd, b'\n')
+    sys.stderr.write('[bt_bridge] trigger sent, reading...\n')
+    sys.stderr.flush()
+    buf = b''
+    idle = 0
+    got_data = False
+    while True:
+        r, _, _ = select.select([fd], [], [], 1.0)
+        if r:
+            data = os.read(fd, 4096)
+            if not data:
+                sys.stderr.write('[bt_bridge] EOF\n')
+                break
+            idle = 0
+            got_data = True
+            buf += data
+            while b'\n' in buf:
+                line, buf = buf.split(b'\n', 1)
+                text = line.decode('utf-8', errors='replace').strip()
+                sys.stdout.write(text + '\n')
+                sys.stdout.flush()
+                sys.stderr.write(f'[bt_bridge] >> {text}\n')
+                sys.stderr.flush()
+        else:
+            idle += 1
+            timeout = 30 if got_data else 8
+            if idle >= timeout:
+                if not got_data:
+                    sys.stderr.write('[bt_bridge] RFCOMM_STALE\n')
+                    sys.stderr.flush()
+                    os.close(fd)
+                    fd = -1
+                    import subprocess, re as _re, shutil
+                    blueutil = shutil.which('blueutil')
+                    if not blueutil:
+                        for p in ['/opt/homebrew/bin/blueutil', '/usr/local/bin/blueutil']:
+                            if os.path.isfile(p): blueutil = p; break
+                    dev_name = port.rsplit('/', 1)[-1].replace('cu.', '').replace('tty.', '')
+                    if blueutil:
+                        try:
+                            paired = subprocess.check_output([blueutil, '--paired'], text=True)
+                            addr = None
+                            for pline in paired.splitlines():
+                                if dev_name.lower() in pline.lower():
+                                    m = _re.search(r'address:\s*([\w-]+)', pline)
+                                    if m: addr = m.group(1)
+                            if addr:
+                                sys.stderr.write(f'[bt_bridge] re-pairing {addr}...\n')
+                                sys.stderr.flush()
+                                subprocess.run([blueutil, '--unpair', addr], timeout=5)
+                                import time as _time; _time.sleep(2)
+                                subprocess.run([blueutil, '--pair', addr], timeout=10)
+                                sys.stderr.write('[bt_bridge] re-paired OK\n')
+                                sys.stderr.flush()
+                            else:
+                                sys.stderr.write(f'[bt_bridge] BT address not found for {dev_name}\n')
+                                sys.stderr.flush()
+                        except Exception as e:
+                            sys.stderr.write(f'[bt_bridge] re-pair error: {e}\n')
+                            sys.stderr.flush()
+                    else:
+                        sys.stderr.write('[bt_bridge] blueutil not found — install with: brew install blueutil\n')
+                        sys.stderr.flush()
+                else:
+                    sys.stderr.write('[bt_bridge] no data for 30s, exiting for reconnect\n')
+                    sys.stderr.flush()
+                break
+except Exception:
+    traceback.print_exc(file=sys.stderr)
+    sys.stderr.flush()
+";
+
+    private bool StartBtBridge(string port)
+    {
+        string scriptPath = Path.Combine(Application.temporaryCachePath, "bt_bridge.py");
+        File.WriteAllText(scriptPath, BtBridgeScript);
+
+        try
+        {
+            _btBridge = new SysProcess();
+            _btBridge.StartInfo = new SysProcessStartInfo
+            {
+                FileName               = "/usr/bin/python3",
+                Arguments              = $"-u \"{scriptPath}\" \"{port}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true
+            };
+            _btBridge.Start();
+            _btBridgePortName = port;
+            // Log stderr from bridge process; surface stale-BT warnings in UI
+            _btBridge.ErrorDataReceived += (s, e) =>
+            {
+                if (string.IsNullOrEmpty(e.Data)) return;
+                MainThreadDispatcher.Instance?.Enqueue(() =>
+                {
+                    if (e.Data.Contains("RFCOMM_STALE"))
+                    {
+                        Debug.LogWarning("[ArduinoBridge] Bluetooth connection stale — auto re-pairing...");
+                        UIDisplayManager.instance?.ShowStatus("Bluetooth stale — reconnexion en cours...");
+                    }
+                    else if (e.Data.Contains("re-paired OK"))
+                    {
+                        Debug.Log("[ArduinoBridge] Bluetooth re-paired successfully");
+                    }
+                    else if (e.Data.Contains("blueutil not found"))
+                    {
+                        Debug.LogWarning("[ArduinoBridge] Bluetooth stale. Please forget and re-pair 'REDbox' in System Settings > Bluetooth. (Install blueutil for auto-repair: brew install blueutil)");
+                        UIDisplayManager.instance?.ShowStatus("Bluetooth stale — re-pairer REDbox dans Reglages Bluetooth");
+                    }
+                    else
+                    {
+                        Debug.Log($"[ArduinoBridge] {e.Data}");
+                    }
+                });
+            };
+            _btBridge.BeginErrorReadLine();
+            Debug.Log($"[ArduinoBridge] BT bridge started (pid {_btBridge.Id}) for {port}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ArduinoBridge] BT bridge failed to start: {ex.Message}");
+            _btBridge = null;
+            return false;
+        }
+    }
+
+    private void StopBtBridge()
+    {
+        if (_btBridge == null) return;
+        try
+        {
+            if (!_btBridge.HasExited)
+            {
+                _btBridge.Kill();
+                _btBridge.WaitForExit(2000);
+            }
+            _btBridge.Dispose();
+        }
+        catch { /* best-effort */ }
+        _btBridge = null;
+        _btBridgePortName = null;
+    }
+#endif
+
     private bool TryOpenPort(string portName)
     {
         try
         {
             _serialPort = new SerialPort(portName, settings.baudRate)
             {
-                ReadTimeout  = 5000,
-                WriteTimeout = 2000,
+                ReadTimeout  = settings.bluetoothMode ? 500 : 5000,
+                WriteTimeout = settings.bluetoothMode ? 5000 : 2000,
                 DtrEnable    = true,  // Nécessaire sur certains Arduinos pour éviter le reset
                 RtsEnable    = true
             };
@@ -506,6 +906,164 @@ public class ArduinoBridge : MonoBehaviour
         }
     }
 
+    // Called by native BLE bridge via UnitySendMessage.
+    public void OnBleConnected(string value)
+    {
+        bool connected = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+        _bleConnected = connected;
+
+        if (!connected && State == ConnectionState.Connected)
+        {
+            SetState(ConnectionState.Disconnected);
+        }
+    }
+
+    // Called by native BLE bridge via UnitySendMessage.
+    public void OnBleData(string base64)
+    {
+        if (string.IsNullOrEmpty(base64)) return;
+
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(base64);
+            string chunk = Encoding.UTF8.GetString(bytes);
+            if (string.IsNullOrEmpty(chunk)) return;
+
+            _bleLineBuffer.Append(chunk);
+            ProcessBleBuffer();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[ArduinoBridge] BLE data decode error: {ex.Message}");
+        }
+    }
+
+    private void ProcessBleBuffer()
+    {
+        int safety = 0;
+        while (_bleLineBuffer.Length > 0 && safety++ < 256)
+        {
+            string buffer = _bleLineBuffer.ToString();
+            int jsonStart = buffer.IndexOf('{');
+
+            // If no JSON start found, fall back to legacy newline framing.
+            if (jsonStart < 0)
+            {
+                int newline = buffer.IndexOf('\n');
+                if (newline < 0) return;
+
+                string legacyLine = buffer.Substring(0, newline).Trim('\r', ' ', '\t');
+                _bleLineBuffer.Remove(0, newline + 1);
+                if (legacyLine.Length > 0)
+                    DispatchBleFrame(legacyLine);
+                continue;
+            }
+
+            // Drop any leading noise before first JSON object.
+            if (jsonStart > 0)
+            {
+                _bleLineBuffer.Remove(0, jsonStart);
+                buffer = _bleLineBuffer.ToString();
+            }
+
+            if (TryFindBalancedJsonEnd(buffer, out int jsonEnd))
+            {
+                string jsonFrame = buffer.Substring(0, jsonEnd + 1).Trim();
+                _bleLineBuffer.Remove(0, jsonEnd + 1);
+                if (jsonFrame.Length > 0)
+                    DispatchBleFrame(jsonFrame);
+                continue;
+            }
+
+            // Incomplete JSON object: try to resync if another object start appears.
+            int nextStart = buffer.IndexOf("{\"event_type\"", 1, StringComparison.Ordinal);
+            if (nextStart > 0)
+            {
+                Debug.LogWarning("[ArduinoBridge] BLE JSON incomplet detecte, resynchronisation du flux.");
+                _bleLineBuffer.Remove(0, nextStart);
+                continue;
+            }
+
+            // Wait for more BLE chunks.
+            return;
+        }
+    }
+
+    private static bool TryFindBalancedJsonEnd(string buffer, out int endIndex)
+    {
+        endIndex = -1;
+        if (string.IsNullOrEmpty(buffer) || buffer[0] != '{') return false;
+
+        int depth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            char c = buffer[i];
+
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (c == '\\')
+                {
+                    escaped = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c == '{')
+            {
+                depth++;
+            }
+            else if (c == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    endIndex = i;
+                    return true;
+                }
+                if (depth < 0)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void DispatchBleFrame(string frame)
+    {
+        _lastRawData = frame;
+        OnRawDataReceived?.Invoke(frame);
+        ProcessReceivedData(frame);
+    }
+
+    // Called by native BLE bridge via UnitySendMessage.
+    public void OnBleError(string message)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _lastConnectionError = message;
+            Debug.LogWarning($"[ArduinoBridge] BLE error: {message}");
+        }
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // LECTURE SÉRIE ASYNCHRONE (thread background)
     // ═════════════════════════════════════════════════════════════════════════
@@ -514,11 +1072,30 @@ public class ArduinoBridge : MonoBehaviour
     {
         try
         {
-            while (!token.IsCancellationRequested && _serialPort != null && _serialPort.IsOpen)
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+            bool useBtBridge = _btBridge != null && !_btBridge.HasExited;
+            Debug.Log($"[ArduinoBridge] ReadSerialAsync: useBtBridge={useBtBridge}");
+#else
+            bool useBtBridge = false;
+#endif
+            while (!token.IsCancellationRequested)
             {
-                // ReadLine bloque jusqu'à réception d'une ligne — thread background OK
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+                // Guard: for bridge path, check process is still alive
+                if (useBtBridge && (_btBridge == null || _btBridge.HasExited)) break;
+#endif
+                // Guard: for SerialPort path, check port is still open
+                if (!useBtBridge && (_serialPort == null || !_serialPort.IsOpen)) break;
+
                 string line = await Task.Run(() =>
                 {
+#if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX
+                    if (useBtBridge)
+                    {
+                        try { return _btBridge?.StandardOutput.ReadLine(); }
+                        catch { return null; }
+                    }
+#endif
                     try
                     {
                         return _serialPort?.ReadLine();
@@ -538,6 +1115,8 @@ public class ArduinoBridge : MonoBehaviour
 
                 string trimmed = line.Trim();
                 if (string.IsNullOrEmpty(trimmed)) continue;
+
+                Debug.Log($"[ArduinoBridge] RAW RX: {trimmed}"); // TODO: remove after BT debug
 
                 // ⚠ On ne touche JAMAIS aux APIs Unity depuis ce thread background.
                 //   Tout passe par MainThreadDispatcher.
@@ -574,6 +1153,18 @@ public class ArduinoBridge : MonoBehaviour
 
     private void ProcessReceivedData(string data)
     {
+        // Protocole RBX v2 JSON (ESP32 POC / firmware v2)
+        if (TryProcessRbxV2Json(data)) return;
+
+        // If a JSON-like frame failed v2 parsing, do not reinterpret it as legacy
+        // colon-delimited data. That creates false unknown-card IDs such as
+        // "CARDDETECTEDREADERID" from JSON field names.
+        if (!string.IsNullOrEmpty(data) && data[0] == '{')
+        {
+            Debug.LogWarning($"[ArduinoBridge] Trame JSON ignorée (parse v2 échoué): {data}");
+            return;
+        }
+
         // Protocole v1 (nouveau format versionné)
         if (data.StartsWith("V1|", StringComparison.OrdinalIgnoreCase))
         {
@@ -637,6 +1228,102 @@ public class ArduinoBridge : MonoBehaviour
         }
 
         UIDisplayManager.instance?.ShowStatus(data);
+    }
+
+    private bool TryProcessRbxV2Json(string data)
+    {
+        if (string.IsNullOrEmpty(data) || data[0] != '{') return false;
+
+        RbxV2Message msg;
+        try
+        {
+            msg = JsonUtility.FromJson<RbxV2Message>(data);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (msg == null || string.IsNullOrWhiteSpace(msg.event_type)) return false;
+
+        string eventType = msg.event_type.Trim().ToLowerInvariant();
+        _useRbxV2Protocol = true;
+
+        switch (eventType)
+        {
+            case "reader_ready":
+                _lastSysState = "READY";
+                _scannerEnabled = true;
+                _pendingScannerEnable = false;
+                _deviceFirmwareVersion = string.IsNullOrWhiteSpace(msg.firmware_version)
+                    ? _deviceFirmwareVersion
+                    : msg.firmware_version;
+                PublishDeviceReadyStateIfChanged();
+                EventManager.Instance?.ScannerMissing(false);
+                UIDisplayManager.instance?.ShowStatus(string.IsNullOrWhiteSpace(_deviceFirmwareVersion) || _deviceFirmwareVersion == "—"
+                    ? "Boitier pret"
+                    : $"Boitier pret (FW {_deviceFirmwareVersion})");
+                return true;
+
+            case "card_detected":
+                _scannerEnabled = true;
+                _pendingScannerEnable = false;
+
+                CardTagData tagData = new CardTagData
+                {
+                    Id = NormalizeCardId(msg.uid),
+                    Type = string.IsNullOrWhiteSpace(msg.card_type)
+                        ? string.Empty
+                        : msg.card_type.Trim().ToUpperInvariant(),
+                    TagUid = NormalizeCardId(msg.uid),
+                    CardId = string.IsNullOrWhiteSpace(msg.card_id) ? string.Empty : msg.card_id.Trim(),
+                    SlotId = string.IsNullOrWhiteSpace(msg.slot_id) ? "center" : msg.slot_id.Trim().ToLowerInvariant(),
+                    Subtype = string.IsNullOrWhiteSpace(msg.subtype) ? string.Empty : msg.subtype.Trim().ToLowerInvariant(),
+                    TaxonomyType = ParseRedboxCardType(msg.card_type)
+                };
+                HandleCardTagData(tagData);
+                return true;
+
+            case "card_removed":
+                UIDisplayManager.instance?.ClearAll();
+                UIDisplayManager.instance?.ShowTemporaryStatus("Carte retirée", 1.2f);
+                return true;
+
+            case "heartbeat":
+                // v2 firmware sends heartbeat periodically even when idle.
+                // Confirms the device is still alive — update READY state but
+                // never override _scannerEnabled (respects user deactivation).
+                if (!string.Equals(_lastSysState, "READY", StringComparison.OrdinalIgnoreCase))
+                {
+                    _lastSysState = "READY";
+                    PublishDeviceReadyStateIfChanged();
+                }
+                return true;
+
+            case "error":
+                _lastErrorMessage = string.IsNullOrWhiteSpace(msg.message) ? "UNKNOWN" : msg.message;
+                UIDisplayManager.instance?.ShowStatus($"ERR: {_lastErrorMessage}");
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static RedboxCardType ParseRedboxCardType(string cardType)
+    {
+        string raw = string.IsNullOrWhiteSpace(cardType) ? string.Empty : cardType.Trim().ToLowerInvariant();
+        return raw switch
+        {
+            "actor" => RedboxCardType.Actor,
+            "instruction" => RedboxCardType.Instruction,
+            "modifier" => RedboxCardType.Modifier,
+            "lore" => RedboxCardType.Lore,
+            "cosmetic" => RedboxCardType.Cosmetic,
+            "world" => RedboxCardType.World,
+            "system" => RedboxCardType.System,
+            _ => RedboxCardType.Unknown,
+        };
     }
 
     private bool TryProcessV1Frame(string frame)
@@ -794,6 +1481,20 @@ public class ArduinoBridge : MonoBehaviour
             _             => RedboxCardType.Unknown,
         };
 
+        // Taxonomy cache: on a full event (CARDTYPE present) populate the cache.
+        // On a cache-hit event (only UID/TAGUID, no CARDTYPE), restore from cache so
+        // TaxonomyType/Subtype/CardId are consistent across first and subsequent scans.
+        if (taxonomyType != RedboxCardType.Unknown)
+        {
+            _taxonomyCache[uid] = (taxonomyType, subtype, cardId);
+        }
+        else if (_taxonomyCache.TryGetValue(uid, out var cached))
+        {
+            taxonomyType = cached.taxonomyType;
+            subtype      = cached.subtype;
+            cardId       = cached.cardId;
+        }
+
         CardTagData tagData = new CardTagData
         {
             Id           = uid,
@@ -851,7 +1552,7 @@ public class ArduinoBridge : MonoBehaviour
                 if (TryResolveCard(uid, out _, out Card removedCard))
                 {
                     OnCardRemoved?.Invoke(removedCard);
-                    EventManager.Instance.CardRemoved(removedCard);
+                    EventManager.Instance?.CardRemoved(removedCard);
                 }
                 OnRedboxEvent?.Invoke(rbEvent);
                 return true;
@@ -908,6 +1609,7 @@ public class ArduinoBridge : MonoBehaviour
 
         // Always fire raw tag event and type handlers before registry lookup.
         OnCardTagRead?.Invoke(tagData);
+        CardTagRead?.Invoke(tagData);
         FireTypeHandlers(tagData);
 
         if (!TryResolveCard(tagData.Id, out string resolvedCardId, out Card card))
@@ -929,7 +1631,7 @@ public class ArduinoBridge : MonoBehaviour
 
         Debug.Log($"[ArduinoBridge] ✓ Carte : {card.cardName} (ID: {card.cardId})");
         OnCardPresented?.Invoke(card);
-        EventManager.Instance.CardPresented(card);
+        EventManager.Instance?.CardPresented(card);
         UIDisplayManager.instance?.ShowCard(card);
     }
 
@@ -1083,7 +1785,34 @@ public class ArduinoBridge : MonoBehaviour
             return;
         }
 
+        _manualDisconnectRequested = false;
         StartConnectionLoop();
+    }
+
+    [ContextMenu("Reconnect")]
+    public void Reconnect()
+    {
+        if (!Application.isPlaying) return;
+        if (_isReconnectInProgress) return;
+        StartCoroutine(ReconnectRoutine());
+    }
+
+    private IEnumerator ReconnectRoutine()
+    {
+        _isReconnectInProgress = true;
+        try
+        {
+            Disconnect();
+            // Let coroutine stop + BT stack close propagate before reconnecting.
+            // A tiny settle delay avoids transient beachball/lockups on macOS SPP.
+            yield return null;
+            yield return new WaitForSeconds(0.35f);
+            Connect();
+        }
+        finally
+        {
+            _isReconnectInProgress = false;
+        }
     }
 
     /// <summary>
@@ -1093,6 +1822,7 @@ public class ArduinoBridge : MonoBehaviour
     [ContextMenu("Disconnect")]
     public void Disconnect()
     {
+        _manualDisconnectRequested = true;
         _cts?.Cancel();
         _cts = null;
 
@@ -1102,8 +1832,10 @@ public class ArduinoBridge : MonoBehaviour
             _connectionLoopCoroutine = null;
         }
 
-        try { _serialPort?.Close(); } catch { /* déjà fermé */ }
+        SerialPort portToClose = _serialPort;
+        CloseSerialPortAsync(portToClose);
         _serialPort = null;
+        CloseBleTransport();
         _lastSysState = "—";
         _pendingScannerEnable = false;
         _scannerEnabled = false;
@@ -1138,6 +1870,16 @@ public class ArduinoBridge : MonoBehaviour
     /// <summary>Active le mode lecture NFC (LED verte sur le boîtier).</summary>
     public void ActivateScanner()
     {
+        if (_useRbxV2Protocol)
+        {
+            _scannerRequested = true;
+            _pendingScannerEnable = false;
+            _scannerEnabled = true;
+            UIDisplayManager.instance?.ShowStatus("Scanner actif (v2)");
+            EventManager.Instance?.ScannerMissing(false);
+            return;
+        }
+
         _scannerRequested = true;
         _pendingScannerEnable = true;
         _scannerEnableRequestedAt = DateTime.UtcNow;
@@ -1150,6 +1892,13 @@ public class ArduinoBridge : MonoBehaviour
         _scannerRequested = false;
         _pendingScannerEnable = false;
         _scannerEnabled = false;
+
+        if (_useRbxV2Protocol)
+        {
+            UIDisplayManager.instance?.ShowStatus("Scanner inactif (v2)");
+            return;
+        }
+
         SendCommand(new byte[] { 0xFF, 0x00 });
     }
 
@@ -1268,9 +2017,16 @@ public class ArduinoBridge : MonoBehaviour
     {
         if (!_pendingScannerEnable) return;
         if (State != ConnectionState.Connected) return;
+        if (_useRbxV2Protocol) return;
+        if (settings != null && settings.bluetoothMode) return;
 
         double elapsed = (DateTime.UtcNow - _scannerEnableRequestedAt).TotalSeconds;
-        if (elapsed < settings.scannerEnableTimeout) return;
+        // On Bluetooth links, first useful v2 frame can arrive after startup/handshake.
+        // Use a larger minimum window to avoid false timeout -> "scanner introuvable".
+        float timeoutSeconds = settings.scannerEnableTimeout;
+        if (settings != null && settings.bluetoothMode)
+            timeoutSeconds = Mathf.Max(timeoutSeconds, 8f);
+        if (elapsed < timeoutSeconds) return;
 
         _pendingScannerEnable = false;
         _scannerEnabled = false;
@@ -1286,6 +2042,7 @@ public class ArduinoBridge : MonoBehaviour
         State = newState;
         Debug.Log($"[ArduinoBridge] État connexion → {newState}");
         OnConnectionStateChanged?.Invoke(newState);
+        ConnectionStateChanged?.Invoke(newState);
         PublishDeviceReadyStateIfChanged();
     }
 
@@ -1399,5 +2156,17 @@ public class ArduinoBridge : MonoBehaviour
     {
         if (_connectionLoopCoroutine != null) return;
         _connectionLoopCoroutine = StartCoroutine(ConnectionLoop());
+    }
+
+    private static void CloseSerialPortAsync(SerialPort port)
+    {
+        if (port == null) return;
+        _ = Task.Run(() =>
+        {
+            try { port.DiscardInBuffer(); } catch { }
+            try { port.DiscardOutBuffer(); } catch { }
+            try { port.Close(); } catch { }
+            try { port.Dispose(); } catch { }
+        });
     }
 }

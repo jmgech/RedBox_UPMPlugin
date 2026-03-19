@@ -57,6 +57,17 @@ public class HardwareSettings : ScriptableObject
     [Tooltip("Connexion via Bluetooth (comportement série identique, port BT à spécifier dans 'serialPort').")]
     public bool bluetoothMode = false;
 
+    [Header("── Bluetooth Low Energy (BLE) ───────────────────")]
+    [Tooltip("Active la connexion BLE native (CoreBluetooth/WinRT) au lieu du port série Bluetooth classique.")]
+    public bool useBleTransport = false;
+
+    [Tooltip("Nom partiel du périphérique BLE à rechercher (ex: REDBOX).")]
+    public string bleEndpoint = "REDBOX";
+
+    [Tooltip("Timeout (secondes) pour établir la connexion BLE avant retry.")]
+    [Range(2f, 30f)]
+    public float bleConnectTimeout = 10f;
+
     [Header("── API de Données ────────────────────────────────")]
     [Tooltip("URL de base de l'API REDbox (sans slash final).")]
     public string webServiceUrl = "https://api.redk.ch";
