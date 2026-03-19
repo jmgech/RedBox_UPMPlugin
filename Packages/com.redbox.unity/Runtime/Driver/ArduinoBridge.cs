@@ -1284,6 +1284,32 @@ except Exception:
                 HandleCardTagData(tagData);
                 return true;
 
+            case "card_present":
+                _scannerEnabled = true;
+                _pendingScannerEnable = false;
+
+                CardTagData presentData = new CardTagData
+                {
+                    Id = NormalizeCardId(msg.uid),
+                    Type = string.IsNullOrWhiteSpace(msg.card_type)
+                        ? string.Empty
+                        : msg.card_type.Trim().ToUpperInvariant(),
+                    TagUid = NormalizeCardId(msg.uid),
+                    CardId = string.IsNullOrWhiteSpace(msg.card_id) ? string.Empty : msg.card_id.Trim(),
+                    SlotId = string.IsNullOrWhiteSpace(msg.slot_id) ? "center" : msg.slot_id.Trim().ToLowerInvariant(),
+                    Subtype = string.IsNullOrWhiteSpace(msg.subtype) ? string.Empty : msg.subtype.Trim().ToLowerInvariant(),
+                    TaxonomyType = ParseRedboxCardType(msg.card_type)
+                };
+
+                // Presence heartbeat: expose the raw tag fact without retriggering
+                // the full card_detected gameplay dispatch pipeline.
+                _lastCardTagData = presentData;
+                _lastScannedId = presentData.Id;
+                _lastScanTime = DateTime.Now;
+                OnCardTagRead?.Invoke(presentData);
+                CardTagRead?.Invoke(presentData);
+                return true;
+
             case "card_removed":
                 UIDisplayManager.instance?.ClearAll();
                 UIDisplayManager.instance?.ShowTemporaryStatus("Carte retirée", 1.2f);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.17 - 2026-03-19
+- Added RBX v0.3 `card_present` handling in `ArduinoBridge` to keep runtime state warm while cards remain on-reader.
+- Updated scanner/session bookkeeping on presence heartbeats so device runtime no longer appears idle between detect and remove cycles.
+- Aligned package behavior with current REDBOX_Device firmware milestone (`milestone-2026-03-19-hal-led-stable`).
+
 ## 0.4.16 - 2026-03-14
 - Added in-VN device status panel showing connection state, active port, and scanner on/off status.
 - Added manual device controls in the VN overlay (Connect Device, Activate Scanner, Reconnect).

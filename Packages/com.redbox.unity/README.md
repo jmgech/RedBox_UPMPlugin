@@ -31,3 +31,4 @@ The generated sample demonstrates:
 ## Notes
 - This package currently focuses on runtime stability.
 - Editor helper scripts were removed to avoid import/compiler issues across projects.
+- Current firmware compatibility target: REDBOX_Device RBX Protocol v0.3 (`reader_ready`, `card_detected`, `card_present`, `card_removed`, `heartbeat`, `error`).
