@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.19 - 2026-03-20
+- Migrated package layout to repository root so Unity UPM base Git URL installs are supported directly.
+- Fixed `REDboxApiCompatibilityRequirement.cs` preprocessor error formatting that could trigger cascading compile failures.
+- Updated installation guidance for base URL and pinned milestone installs.
+
 ## 0.4.18 - 2026-03-20
 - Fixed Git UPM installation guidance for monorepo layout by standardizing on `?path=/Packages/com.redbox.unity` URLs.
 - Reverted root-manifest install approach that caused Unity to import nested package content as a single root package, producing compile failures in fresh projects.
