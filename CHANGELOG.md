@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.31 - 2026-03-20
+- Fixed `CardScanToast` `NEW` badge false positives on already-seen cards.
+- `OnCardTagRead` now uses context scan count (`CardScanStatsService.GetContextCount`) instead of forcing flash on every raw read.
+
 ## 0.4.30 - 2026-03-20
 - Added configurable scan stats policy in `HardwareSettings`:
 	- `scanStatsMode` (`SessionOnly` or `PersistentByContext`)

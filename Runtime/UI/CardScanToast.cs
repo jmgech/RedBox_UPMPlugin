@@ -257,8 +257,9 @@ public class CardScanToast : MonoBehaviour
         _tagData = tagData;
         _hasTagData = true;
         _hideAt  = displayDuration > 0f ? Time.unscaledTime + displayDuration : float.MaxValue;
-        _flash   = true;
-        _flashUntil = Time.unscaledTime + 0.8f;
+        int seenInContext = CardScanStatsService.GetContextCount(tagData.Id);
+        _flash   = seenInContext <= 0;
+        _flashUntil = _flash ? Time.unscaledTime + 0.8f : -1f;
     }
 
     private void OnUnknownCardScanned(CardTagData tagData)
