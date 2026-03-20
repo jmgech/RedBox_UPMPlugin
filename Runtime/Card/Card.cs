@@ -32,22 +32,39 @@ public abstract class Card : ScriptableObject
     [Tooltip("Optional card artwork. Shown in the Card Database editor and the LastScanBadge widget.")]
     public Texture2D cardArt;
 
-    [Header("── Runtime Scan Stats (Session) ───────────────────────────────────")]
+    [Header("── Runtime Scan Stats ─────────────────────────────────────────────")]
     [NonSerialized] private int _sessionScanCount;
+    [NonSerialized] private int _contextScanCount;
     [NonSerialized] private string _lastScanUtcIso;
+    [NonSerialized] private string _statsContextId = "session";
+    [NonSerialized] private bool _statsPersistent;
 
     public int SessionScanCount => _sessionScanCount;
+    public int ContextScanCount => _contextScanCount;
     public string LastScanUtcIso => _lastScanUtcIso;
+    public string StatsContextId => _statsContextId;
+    public bool StatsPersistent => _statsPersistent;
 
     public void RegisterScan()
     {
-        _sessionScanCount++;
-        _lastScanUtcIso = DateTime.UtcNow.ToString("o");
+        RegisterScan(_sessionScanCount + 1, _sessionScanCount + 1, "session", false);
+    }
+
+    public void RegisterScan(int sessionScanCount, int contextScanCount, string contextId, bool statsPersistent)
+    {
+        _sessionScanCount = Mathf.Max(0, sessionScanCount);
+        _contextScanCount = Mathf.Max(0, contextScanCount);
+        _statsContextId = string.IsNullOrWhiteSpace(contextId) ? "default" : contextId;
+        _statsPersistent = statsPersistent;
+        _lastScanUtcIso = _contextScanCount > 0 ? DateTime.UtcNow.ToString("o") : null;
     }
 
     public void ResetSessionScanStats()
     {
         _sessionScanCount = 0;
+        _contextScanCount = 0;
+        _statsContextId = "session";
+        _statsPersistent = false;
         _lastScanUtcIso = null;
     }
 

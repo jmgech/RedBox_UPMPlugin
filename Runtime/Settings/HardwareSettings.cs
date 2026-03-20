@@ -9,6 +9,12 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "HardwareSettings", menuName = "RK/Settings/Hardware Settings")]
 public class HardwareSettings : ScriptableObject
 {
+    public enum ScanStatsMode
+    {
+        SessionOnly,
+        PersistentByContext
+    }
+
     [Header("── Connexion Série ──────────────────────────────")]
     [Tooltip("Port COM à utiliser.\n• Windows : COM3, COM4…\n• Mac : /dev/tty.usbserial-xxxx\n• Linux : /dev/ttyUSB0")]
     public string serialPort = "COM3";
@@ -75,4 +81,14 @@ public class HardwareSettings : ScriptableObject
     [Tooltip("Timeout réseau en secondes pour le chargement des données de cartes.")]
     [Range(3, 30)]
     public int networkTimeout = 10;
+
+    [Header("── Stats de Scan ─────────────────────────────────")]
+    [Tooltip("Mode de conservation des stats de scan: session courante uniquement, ou persistance par contexte.")]
+    public ScanStatsMode scanStatsMode = ScanStatsMode.SessionOnly;
+
+    [Tooltip("Contexte logique des stats persistantes (ex: profile_a, partie_1, campaign).")]
+    public string scanStatsContextId = "default";
+
+    [Tooltip("Efface les stats persistantes du contexte au démarrage.")]
+    public bool resetPersistentScanStatsOnStart = false;
 }

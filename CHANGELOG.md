@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.30 - 2026-03-20
+- Added configurable scan stats policy in `HardwareSettings`:
+	- `scanStatsMode` (`SessionOnly` or `PersistentByContext`)
+	- `scanStatsContextId`
+	- `resetPersistentScanStatsOnStart`
+- Added `CardScanStatsService` to centralize per-card scan counters by session and by persistent context.
+- Extended `Card` runtime stats section with context-aware fields:
+	- `ContextScanCount`
+	- `StatsContextId`
+	- `StatsPersistent`
+- Wired `ArduinoBridge` to configure stats mode and update counters on each resolved card scan.
+- Updated `CardScanToast` to show context-aware counters and drive `NEW` from first scan in the active context.
+
 ## 0.4.29 - 2026-03-20
 - Added runtime session scan stats to `Card` (`SessionScanCount`, `LastScanUtcIso`).
 - Incremented scan stats in `ArduinoBridge` on resolved card scans.

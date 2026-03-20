@@ -246,7 +246,7 @@ public class CardScanToast : MonoBehaviour
         _card    = card;
         _hasTagData = false;
         _hideAt  = displayDuration > 0f ? Time.unscaledTime + displayDuration : float.MaxValue;
-        _flash   = card.SessionScanCount <= 1;
+        _flash   = card.ContextScanCount <= 1;
         _flashUntil = _flash ? Time.unscaledTime + 0.8f : -1f;
     }
 
@@ -419,7 +419,8 @@ public class CardScanToast : MonoBehaviour
             py += 22;
 
             // Stats row
-            string stats = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}   SCAN {_card.SessionScanCount}";
+            string scopeLabel = _card.StatsPersistent ? $"CTX({_card.StatsContextId})" : "SESSION";
+            string stats = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}   {scopeLabel} {_card.ContextScanCount}";
             GUI.Label(new Rect(px, py, pw, 22), stats, _statLabel);
             py += 22;
 

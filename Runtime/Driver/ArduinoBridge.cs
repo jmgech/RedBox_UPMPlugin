@@ -235,6 +235,9 @@ public class ArduinoBridge : MonoBehaviour, IRedboxReader
             return;
         }
 
+        CardScanStatsService.Configure(settings);
+        SyncCardStatsSnapshot();
+
         // Téléchargement asynchrone des données de cartes
         StartCoroutine(FetchCardDataFromApi());
 
@@ -302,6 +305,23 @@ public class ArduinoBridge : MonoBehaviour, IRedboxReader
         _pendingScannerEnable = false;
         _scannerEnabled = false;
         PublishDeviceReadyStateIfChanged();
+        CardScanStatsService.ResetSession();
+    }
+
+    private void SyncCardStatsSnapshot()
+    {
+        if (_cardRegistry == null) return;
+
+        foreach (var entry in _cardRegistry)
+        {
+            Card card = entry.Value;
+            if (card == null) continue;
+
+            string id = string.IsNullOrWhiteSpace(card.cardId) ? entry.Key : card.cardId;
+            int sessionCount = CardScanStatsService.GetSessionCount(id);
+            int contextCount = CardScanStatsService.GetContextCount(id);
+            card.RegisterScan(sessionCount, contextCount, CardScanStatsService.ActiveContextId, CardScanStatsService.IsPersistent);
+        }
     }
 
     private bool UseBleTransport => settings != null && settings.bluetoothMode && settings.useBleTransport;
@@ -1694,7 +1714,10 @@ except Exception:
             _lastScannedId = resolvedCardId;
         }
 
-        card.RegisterScan();
+        string statsId = string.IsNullOrWhiteSpace(card.cardId) ? resolvedCardId : card.cardId;
+        int contextCount = CardScanStatsService.RegisterScan(statsId);
+        int sessionCount = CardScanStatsService.GetSessionCount(statsId);
+        card.RegisterScan(sessionCount, contextCount, CardScanStatsService.ActiveContextId, CardScanStatsService.IsPersistent);
         Debug.Log($"[ArduinoBridge] ✓ Carte : {card.cardName} (ID: {card.cardId})");
         OnCardPresented?.Invoke(card);
         EventManager.Instance?.CardPresented(card);
