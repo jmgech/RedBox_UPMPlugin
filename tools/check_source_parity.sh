@@ -45,7 +45,7 @@ compare_tree() {
     --include='*.meta' \
     --include='*.asmdef' \
     --exclude='*' \
-    "$src" "$dst"
+    "$src" "$dst" | grep -vE '^\.d\.\.t\.\.\.\. ' || true
 }
 
 runtime_ignore="$ROOT_DIR/tools/parity-ignore-runtime.txt"

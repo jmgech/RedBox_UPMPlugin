@@ -1,0 +1,4 @@
+Runtime/Driver/ArduinoBridge.cs.meta=6e4d034977f8e413fbd79fa120b4674d
+Runtime/Driver/IRedboxReader.cs.meta=9f2dba4e19d54f209f5ede87f8cc0903
+Runtime/Driver/Native/ArduinoBridgeBleNative.cs.meta=8f2b8f12f5354622a77465092fa45f7f
+Runtime/Settings/HardwareSettings.cs.meta=1bd8768a3ef0145c7b5164af56d03184

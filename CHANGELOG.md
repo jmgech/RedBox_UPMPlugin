@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.28 - 2026-03-20
+- Added repository-level process contract in `AGENTS.md` for source-sync, parity, GUID safety, and release tagging.
+- Added GUID stability guard tooling:
+	- `tools/stable-script-guids.txt`
+	- `tools/check_guid_stability.sh`
+- Updated CI workflow `.github/workflows/source-parity-check.yml` to run both source parity and GUID stability checks.
+- Added missing Unity `.meta` files for new process/tool files.
+
 ## 0.4.27 - 2026-03-20
 - Fixed immutable package import warnings caused by orphan plugin `.meta` files in `Runtime/Plugins/macOS`.
 - Added missing `.meta` files for parity guard tool files under `tools/`.

@@ -36,6 +36,7 @@ To prevent release drift between the canonical source package and this plugin re
 - Local check:
 	- `bash tools/check_source_parity.sh /path/to/REDbox_Project/Packages/com.redbox.unity`
 	- or set `REDBOX_SOURCE_PACKAGE_DIR` then run `bash tools/check_source_parity.sh`
+	- `bash tools/check_guid_stability.sh`
 	- intentional plugin-only differences are maintained in `tools/parity-ignore-runtime.txt` and `tools/parity-ignore-editor.txt`
 - CI check:
 	- Workflow: `.github/workflows/source-parity-check.yml`

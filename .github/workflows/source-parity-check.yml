@@ -20,6 +20,8 @@ on:
       - "Runtime/**"
       - "Editor/**"
       - "tools/check_source_parity.sh"
+      - "tools/check_guid_stability.sh"
+      - "tools/stable-script-guids.txt"
       - ".github/workflows/source-parity-check.yml"
   push:
     branches: [ main ]
@@ -27,6 +29,8 @@ on:
       - "Runtime/**"
       - "Editor/**"
       - "tools/check_source_parity.sh"
+      - "tools/check_guid_stability.sh"
+      - "tools/stable-script-guids.txt"
       - ".github/workflows/source-parity-check.yml"
 
 jobs:
@@ -54,5 +58,9 @@ jobs:
       - name: Run source parity check
         shell: bash
         run: |
-          chmod +x tools/check_source_parity.sh
-          tools/check_source_parity.sh "${GITHUB_WORKSPACE}/source-project/${{ steps.cfg.outputs.subpath }}"
+          bash tools/check_source_parity.sh "${GITHUB_WORKSPACE}/source-project/${{ steps.cfg.outputs.subpath }}"
+
+      - name: Run GUID stability check
+        shell: bash
+        run: |
+          bash tools/check_guid_stability.sh

@@ -5,3 +5,5 @@ Driver/ArduinoBridge.cs.meta
 Driver/IRedboxReader.cs.meta
 Driver/Native/ArduinoBridgeBleNative.cs.meta
 Settings/HardwareSettings.cs.meta
+Plugins/macOS/build_ble_bridge.sh.meta
+Plugins/macOS/libRKRedboxBleBridge.dylib.meta
