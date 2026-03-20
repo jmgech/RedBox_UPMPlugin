@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.25 - 2026-03-20
+- Added automated source parity guard script: `tools/check_source_parity.sh`.
+- Added CI workflow: `.github/workflows/source-parity-check.yml` to verify plugin `Runtime/` and `Editor/` against canonical source package repo on push/PR/manual runs.
+- Goal: block future drift where features are updated in source package but not propagated to plugin release repo.
+
 ## 0.4.24 - 2026-03-20
 - Performed full `Runtime` and `Editor` parity sync from canonical source package to plugin to remove remaining drift.
 - Includes ArduinoBridge/runtime updates required for heartbeat and card state flows used by the toast/UI (`CARD ON`, `CARD AWAY`, ready/heartbeat paths).

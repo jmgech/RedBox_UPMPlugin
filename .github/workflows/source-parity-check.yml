@@ -1,0 +1,58 @@
+name: Source Parity Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: "GitHub repo containing canonical com.redbox.unity package (owner/repo)"
+        required: false
+        default: "jmgech/REDbox_Project"
+      source_ref:
+        description: "Branch or tag in source repo"
+        required: false
+        default: "main"
+      source_subpath:
+        description: "Path to canonical package inside source repo"
+        required: false
+        default: "Packages/com.redbox.unity"
+  pull_request:
+    paths:
+      - "Runtime/**"
+      - "Editor/**"
+      - "tools/check_source_parity.sh"
+      - ".github/workflows/source-parity-check.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "Runtime/**"
+      - "Editor/**"
+      - "tools/check_source_parity.sh"
+      - ".github/workflows/source-parity-check.yml"
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin repo
+        uses: actions/checkout@v4
+
+      - name: Resolve source settings
+        id: cfg
+        shell: bash
+        run: |
+          echo "repo=${{ github.event.inputs.source_repo || 'jmgech/REDbox_Project' }}" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ github.event.inputs.source_ref || 'main' }}" >> "$GITHUB_OUTPUT"
+          echo "subpath=${{ github.event.inputs.source_subpath || 'Packages/com.redbox.unity' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.cfg.outputs.repo }}
+          ref: ${{ steps.cfg.outputs.ref }}
+          path: source-project
+
+      - name: Run source parity check
+        shell: bash
+        run: |
+          chmod +x tools/check_source_parity.sh
+          tools/check_source_parity.sh "${GITHUB_WORKSPACE}/source-project/${{ steps.cfg.outputs.subpath }}"
