@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.27 - 2026-03-20
+- Fixed immutable package import warnings caused by orphan plugin `.meta` files in `Runtime/Plugins/macOS`.
+- Added missing `.meta` files for parity guard tool files under `tools/`.
+- Goal: clean Unity console on package import/update without false asset/meta errors.
+
 ## 0.4.26 - 2026-03-20
 - Fixed Unity `Missing (Mono Script)` regression by restoring stable script GUIDs in:
 	- `Runtime/Driver/ArduinoBridge.cs.meta`
