@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.20 - 2026-03-20
+- Replaced hard compile-stop API compatibility guard with an editor startup enforcer in `REDbox.Compat`.
+- Added a fail-fast prompt when API Compatibility is not `.NET Framework`, including a one-click automatic fix to `.NET_Unity_4_8`.
+- Kept compatibility checks isolated in the always-compiling compat assembly so fresh installs can self-recover instead of failing with compiler cascades.
+
 ## 0.4.19 - 2026-03-20
 - Migrated package layout to repository root so Unity UPM base Git URL installs are supported directly.
 - Fixed `REDboxApiCompatibilityRequirement.cs` preprocessor error formatting that could trigger cascading compile failures.
