@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.24 - 2026-03-20
+- Performed full `Runtime` and `Editor` parity sync from canonical source package to plugin to remove remaining drift.
+- Includes ArduinoBridge/runtime updates required for heartbeat and card state flows used by the toast/UI (`CARD ON`, `CARD AWAY`, ready/heartbeat paths).
+- Added missing macOS plugin metadata files (`build_ble_bridge.sh.meta`, `libRKRedboxBleBridge.dylib.meta`) from source package.
+- Kept API compatibility guard in single-line `#error` format and preserved startup auto-fix enforcer behavior.
+
 ## 0.4.23 - 2026-03-20
 - Fixed regression where `CardScanToast` subscribed to `ArduinoBridge.OnHeartbeat` but the event was missing in the plugin runtime.
 - Added `ArduinoBridge.OnHeartbeat` and invoke it on RBX v2 `heartbeat` frames.

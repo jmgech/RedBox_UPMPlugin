@@ -81,7 +81,7 @@ public class ArduinoBridge : MonoBehaviour, IRedboxReader
     /// <summary>Déclenché sur le Main Thread quand l'état prêt (Connected + READY) change.</summary>
     public static event Action<bool> OnDeviceReadyChanged;
 
-    /// <summary>Déclenché sur chaque heartbeat firmware v2 reçu.</summary>
+    /// <summary>Déclenché sur le Main Thread à chaque heartbeat reçu du firmware.</summary>
     public static event Action OnHeartbeat;
 
     /// <summary>Déclenché quand une carte est posée sur le lecteur (NFC ENTER / TAP).</summary>
@@ -1285,6 +1285,7 @@ except Exception:
                     TaxonomyType = ParseRedboxCardType(msg.card_type)
                 };
                 HandleCardTagData(tagData);
+                EmitRbxV2LifecycleEvent(msg, RedboxEvent.EventType.CardEnter);
                 return true;
 
             case "card_present":
@@ -1311,23 +1312,25 @@ except Exception:
                 _lastScanTime = DateTime.Now;
                 OnCardTagRead?.Invoke(presentData);
                 CardTagRead?.Invoke(presentData);
+                EmitRbxV2LifecycleEvent(msg, RedboxEvent.EventType.CardPresent);
                 return true;
 
             case "card_removed":
                 UIDisplayManager.instance?.ClearAll();
                 UIDisplayManager.instance?.ShowTemporaryStatus("Carte retirée", 1.2f);
+                EmitRbxV2LifecycleEvent(msg, RedboxEvent.EventType.CardExit);
                 return true;
 
             case "heartbeat":
                 // v2 firmware sends heartbeat periodically even when idle.
                 // Confirms the device is still alive — update READY state but
                 // never override _scannerEnabled (respects user deactivation).
+                OnHeartbeat?.Invoke();
                 if (!string.Equals(_lastSysState, "READY", StringComparison.OrdinalIgnoreCase))
                 {
                     _lastSysState = "READY";
                     PublishDeviceReadyStateIfChanged();
                 }
-                OnHeartbeat?.Invoke();
                 return true;
 
             case "error":
@@ -1338,6 +1341,38 @@ except Exception:
             default:
                 return false;
         }
+    }
+
+    private void EmitRbxV2LifecycleEvent(RbxV2Message msg, RedboxEvent.EventType eventType)
+    {
+        string uid = NormalizeCardId(msg.uid);
+        string tagUid = NormalizeCardId(msg.uid);
+        string slotId = string.IsNullOrWhiteSpace(msg.slot_id) ? "center" : msg.slot_id.Trim().ToLowerInvariant();
+        string readerId = string.IsNullOrWhiteSpace(msg.reader_id) ? "reader_1" : msg.reader_id.Trim();
+        RedboxCardType cardType = ParseRedboxCardType(msg.card_type);
+        string subtype = string.IsNullOrWhiteSpace(msg.subtype) ? string.Empty : msg.subtype.Trim().ToLowerInvariant();
+        string cardId = string.IsNullOrWhiteSpace(msg.card_id) ? uid : msg.card_id.Trim();
+
+        RedboxCard rbCard = eventType == RedboxEvent.EventType.CardExit
+            ? null
+            : new RedboxCard(
+                uid: uid,
+                cardType: cardType,
+                subtype: subtype,
+                cardId: string.IsNullOrEmpty(cardId) ? uid : cardId,
+                physicalTagUid: tagUid,
+                payloadVersion: msg.payload_version > 0 ? msg.payload_version : (cardType != RedboxCardType.Unknown ? 1 : 0)
+            );
+
+        int sequence = msg.sequence > 0 ? msg.sequence : ++_redboxEventSequence;
+
+        OnRedboxEvent?.Invoke(new RedboxEvent(
+            type: eventType,
+            card: rbCard,
+            readerId: readerId,
+            slotId: slotId,
+            sequence: sequence
+        ));
     }
 
     private static RedboxCardType ParseRedboxCardType(string cardType)
