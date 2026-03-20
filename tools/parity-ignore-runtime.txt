@@ -1,3 +1,7 @@
 Compat/REDboxApiCompatibilityEnforcer.cs
 Compat/REDboxApiCompatibilityEnforcer.cs.meta
 Compat/REDboxApiCompatibilityRequirement.cs
+Driver/ArduinoBridge.cs.meta
+Driver/IRedboxReader.cs.meta
+Driver/Native/ArduinoBridgeBleNative.cs.meta
+Settings/HardwareSettings.cs.meta

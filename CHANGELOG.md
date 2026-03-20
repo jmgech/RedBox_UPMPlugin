@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.26 - 2026-03-20
+- Fixed Unity `Missing (Mono Script)` regression by restoring stable script GUIDs in:
+	- `Runtime/Driver/ArduinoBridge.cs.meta`
+	- `Runtime/Driver/IRedboxReader.cs.meta`
+	- `Runtime/Driver/Native/ArduinoBridgeBleNative.cs.meta`
+	- `Runtime/Settings/HardwareSettings.cs.meta`
+- This restores backwards-compatible scene/prefab/scriptable object references after parity-sync changes.
+
 ## 0.4.25 - 2026-03-20
 - Added automated source parity guard script: `tools/check_source_parity.sh`.
 - Added CI workflow: `.github/workflows/source-parity-check.yml` to verify plugin `Runtime/` and `Editor/` against canonical source package repo on push/PR/manual runs.
