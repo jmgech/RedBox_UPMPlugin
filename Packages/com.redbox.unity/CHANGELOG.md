@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.18 - 2026-03-20
+- Fixed Git UPM installation guidance for monorepo layout by standardizing on `?path=/Packages/com.redbox.unity` URLs.
+- Reverted root-manifest install approach that caused Unity to import nested package content as a single root package, producing compile failures in fresh projects.
+
 ## 0.4.17 - 2026-03-19
 - Added RBX v0.3 `card_present` handling in `ArduinoBridge` to keep runtime state warm while cards remain on-reader.
 - Updated scanner/session bookkeeping on presence heartbeats so device runtime no longer appears idle between detect and remove cycles.
