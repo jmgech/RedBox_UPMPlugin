@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.23 - 2026-03-20
+- Fixed regression where `CardScanToast` subscribed to `ArduinoBridge.OnHeartbeat` but the event was missing in the plugin runtime.
+- Added `ArduinoBridge.OnHeartbeat` and invoke it on RBX v2 `heartbeat` frames.
+
 ## 0.4.22 - 2026-03-20
 - Synced `CardScanToast` from source package, including heartbeat visual modes (Arcade, ECG spike, concentric circles) and action/status improvements.
 - Added `Editor/CardScanToastEditor.cs` custom inspector with one-click visual presets (Compact Line, Oversize ECG, Hero Concentric).

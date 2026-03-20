@@ -81,6 +81,9 @@ public class ArduinoBridge : MonoBehaviour, IRedboxReader
     /// <summary>Déclenché sur le Main Thread quand l'état prêt (Connected + READY) change.</summary>
     public static event Action<bool> OnDeviceReadyChanged;
 
+    /// <summary>Déclenché sur chaque heartbeat firmware v2 reçu.</summary>
+    public static event Action OnHeartbeat;
+
     /// <summary>Déclenché quand une carte est posée sur le lecteur (NFC ENTER / TAP).</summary>
     public static event Action<Card> OnCardPresented;
 
@@ -1324,6 +1327,7 @@ except Exception:
                     _lastSysState = "READY";
                     PublishDeviceReadyStateIfChanged();
                 }
+                OnHeartbeat?.Invoke();
                 return true;
 
             case "error":
