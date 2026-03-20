@@ -1,6 +1,6 @@
 {
   "name": "com.redbox.unity",
-  "version": "0.4.21",
+  "version": "0.4.22",
   "displayName": "REDbox Unity Integration",
   "description": "Plug-and-play REDbox serial bridge, card events, and runtime settings menu for Unity projects.",
   "unity": "2022.3",

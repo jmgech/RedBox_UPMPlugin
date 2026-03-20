@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.22 - 2026-03-20
+- Synced `CardScanToast` from source package, including heartbeat visual modes (Arcade, ECG spike, concentric circles) and action/status improvements.
+- Added `Editor/CardScanToastEditor.cs` custom inspector with one-click visual presets (Compact Line, Oversize ECG, Hero Concentric).
+
 ## 0.4.21 - 2026-03-20
 - Restored `Runtime/Driver/IRedboxReader.cs` and `ReaderSource` after root-layout migration so `ArduinoBridge` compiles in fresh UPM installs.
 - Added missing Unity `.meta` files for package root docs/tools and native plugin folders/files to prevent immutable-package asset import warnings.
