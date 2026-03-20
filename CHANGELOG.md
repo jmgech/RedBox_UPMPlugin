@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.21 - 2026-03-20
+- Restored `Runtime/Driver/IRedboxReader.cs` and `ReaderSource` after root-layout migration so `ArduinoBridge` compiles in fresh UPM installs.
+- Added missing Unity `.meta` files for package root docs/tools and native plugin folders/files to prevent immutable-package asset import warnings.
+
 ## 0.4.20 - 2026-03-20
 - Replaced hard compile-stop API compatibility guard with an editor startup enforcer in `REDbox.Compat`.
 - Added a fail-fast prompt when API Compatibility is not `.NET Framework`, including a one-click automatic fix to `.NET_Unity_4_8`.
