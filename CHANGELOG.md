@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.29 - 2026-03-20
+- Added runtime session scan stats to `Card` (`SessionScanCount`, `LastScanUtcIso`).
+- Incremented scan stats in `ArduinoBridge` on resolved card scans.
+- Updated `CardScanToast` so `NEW` flashes only on first session scan per card.
+- Added `SCAN` counter in toast stats line for quick operator feedback.
+
 ## 0.4.28 - 2026-03-20
 - Added repository-level process contract in `AGENTS.md` for source-sync, parity, GUID safety, and release tagging.
 - Added GUID stability guard tooling:

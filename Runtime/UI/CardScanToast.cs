@@ -12,7 +12,7 @@ using UnityEngine;
 ///   - Card name + type in large text
 ///   - cardId, HP/MP/AT stats
 ///   - Connection / scanner status banner
-///   - Animated "NEW" flash on each new scan
+///   - Animated "NEW" flash on first session scan per card
 /// </summary>
 public class CardScanToast : MonoBehaviour
 {
@@ -246,8 +246,8 @@ public class CardScanToast : MonoBehaviour
         _card    = card;
         _hasTagData = false;
         _hideAt  = displayDuration > 0f ? Time.unscaledTime + displayDuration : float.MaxValue;
-        _flash   = true;
-        _flashUntil = Time.unscaledTime + 0.8f;
+        _flash   = card.SessionScanCount <= 1;
+        _flashUntil = _flash ? Time.unscaledTime + 0.8f : -1f;
     }
 
     private void OnCardTagRead(CardTagData tagData)
@@ -419,7 +419,7 @@ public class CardScanToast : MonoBehaviour
             py += 22;
 
             // Stats row
-            string stats = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}";
+            string stats = $"HP {_card.hp}   MP {_card.mp}   AT {_card.at}   SCAN {_card.SessionScanCount}";
             GUI.Label(new Rect(px, py, pw, 22), stats, _statLabel);
             py += 22;
 

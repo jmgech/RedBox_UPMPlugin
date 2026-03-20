@@ -1694,6 +1694,7 @@ except Exception:
             _lastScannedId = resolvedCardId;
         }
 
+        card.RegisterScan();
         Debug.Log($"[ArduinoBridge] ✓ Carte : {card.cardName} (ID: {card.cardId})");
         OnCardPresented?.Invoke(card);
         EventManager.Instance?.CardPresented(card);

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 
@@ -30,6 +31,25 @@ public abstract class Card : ScriptableObject
     [Header("── Art ─────────────────────────────────────────────────────────────")]
     [Tooltip("Optional card artwork. Shown in the Card Database editor and the LastScanBadge widget.")]
     public Texture2D cardArt;
+
+    [Header("── Runtime Scan Stats (Session) ───────────────────────────────────")]
+    [NonSerialized] private int _sessionScanCount;
+    [NonSerialized] private string _lastScanUtcIso;
+
+    public int SessionScanCount => _sessionScanCount;
+    public string LastScanUtcIso => _lastScanUtcIso;
+
+    public void RegisterScan()
+    {
+        _sessionScanCount++;
+        _lastScanUtcIso = DateTime.UtcNow.ToString("o");
+    }
+
+    public void ResetSessionScanStats()
+    {
+        _sessionScanCount = 0;
+        _lastScanUtcIso = null;
+    }
 
     public abstract void Activate();
 }
